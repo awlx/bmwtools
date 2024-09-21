@@ -17,6 +17,10 @@ for entry in data:
     energy_from_grid = entry.get('energyConsumedFromPowerGridKwh', 0)
     energy_to_battery = entry.get('energyIncreaseHvbKwh', 0)
     
+    # Filter out sessions with an energy increase to the battery below 5kWh
+    if energy_to_battery < 5:
+        continue
+    
     # Determine if the session is AC or DC by checking if any charging block has an average power > 11kW
     is_dc = any(block['averagePowerGridKw'] > 11 for block in entry['chargingBlocks'])
     session_type = 'DC' if is_dc else 'AC'
