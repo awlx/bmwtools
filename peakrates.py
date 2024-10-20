@@ -12,7 +12,7 @@ peak_rates = []
 
 for entry in data:
     # Filter charging blocks where the averagePowerGridKw is >= 180
-    filtered_blocks = [block for block in entry['chargingBlocks'] if block['averagePowerGridKw'] >= 180]
+    filtered_blocks = [block for block in entry['chargingBlocks'] if block['averagePowerGridKw'] >= 100]
     
     if filtered_blocks:  # Proceed if there are any blocks left after filtering
         # Find the highest averagePowerGridKw in the filtered blocks
@@ -33,7 +33,7 @@ df = df.sort_values(by='Date')
 
 # Create a line plot using Plotly
 fig = px.line(df, x='Date', y='Peak Power (kW)', 
-              title='Peak Charge Rates Over Time (Filtered: Avg Power ≥ 180 kW)', 
+              title='Peak Charge Rates Over Time (Filtered: Avg Power ≥ 160 kW)', 
               labels={'Date': 'Date', 'Peak Power (kW)': 'Peak Power (kW)'},
               markers=True)
 
