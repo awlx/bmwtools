@@ -77,7 +77,9 @@ sorted_successful_providers = sorted(successful_providers_count.items(), key=lam
 if sorted_failed_providers:
     print("\nNumber of failed sessions per provider (sorted by failed sessions):")
     for provider, count in sorted_failed_providers:
-        print(f"{provider}: {count} failed sessions")
+        total_sessions_for_provider = count + successful_providers_count[provider]
+        failure_percentage = (count / total_sessions_for_provider) * 100
+        print(f"{provider}: {count} failed sessions ({failure_percentage:.2f}% of total sessions)")
 else:
     print("No failed sessions found.")
 
