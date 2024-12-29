@@ -11,6 +11,7 @@ with open(file_path, 'r') as file:
 # Extract relevant data for mapping and count frequencies
 location_counts = defaultdict(int)
 locations = []
+failed_locations = defaultdict(int)
 
 # Define a function to find if a location is close to any existing location
 def find_close_location(lat, lon, locations, threshold=0.10):
@@ -25,17 +26,28 @@ for entry in charging_data:
     latitude = loc.get("mapMatchedLatitude")
     longitude = loc.get("mapMatchedLongitude")
     address = loc.get("formattedAddress")
+    session_energy = entry.get('energyConsumedFromPowerGridKwh', 0)  # Total energy for session
+    
     if latitude and longitude:
-        close_location = find_close_location(latitude, longitude, locations)
-        if close_location:
-            location_counts[close_location] += 1
+        location_key = (latitude, longitude, address)
+        if session_energy == 0:
+            close_location = find_close_location(latitude, longitude, failed_locations.keys())
+            if close_location:
+                failed_locations[close_location] += 1
+            else:
+                failed_locations[location_key] += 1
         else:
-            location_key = (latitude, longitude, address)
-            location_counts[location_key] += 1
-            locations.append(location_key)
+            close_location = find_close_location(latitude, longitude, locations)
+            if close_location:
+                location_counts[close_location] += 1
+            else:
+                location_counts[location_key] += 1
+                locations.append(location_key)
 
 # Function to determine marker color based on frequency
-def get_marker_color(frequency):
+def get_marker_color(frequency, is_failed):
+    if is_failed:
+        return 'blue'
     if frequency > 20:
         return 'darkred'
     elif frequency > 15:
@@ -60,14 +72,36 @@ if locations:
         attr='Map data © OpenStreetMap contributors, Tiles © FFMUC'
     )
 
-    # Add charging points to the map with colored markers
+    # Create feature groups for successful and failed locations
+    successful_group = folium.FeatureGroup(name='Successful Locations')
+    failed_group = folium.FeatureGroup(name='Failed Locations')
+
+    # Add successful charging points to the map with colored markers
     for lat, lon, addr in locations:
-        freq = location_counts[(lat, lon, addr)]
+        location_key = (lat, lon, addr)
+        freq = location_counts[location_key]
+        is_failed = location_key in failed_locations and location_counts[location_key] == 0
         folium.Marker(
             location=[lat, lon],
             popup=f"{addr} (Visits: {freq})",
-            icon=folium.Icon(color=get_marker_color(freq))
-        ).add_to(charging_map)
+            icon=folium.Icon(color=get_marker_color(freq, is_failed))
+        ).add_to(successful_group if not is_failed else failed_group)
+
+    # Add failed charging points to the map with blue markers
+    for lat, lon, addr in failed_locations:
+        if location_counts[(lat, lon, addr)] == 0:  # Only add if no successful sessions
+            folium.Marker(
+                location=[lat, lon],
+                popup=f"{addr} (Failed Visits: {failed_locations[(lat, lon, addr)]})",
+                icon=folium.Icon(color='blue')
+            ).add_to(failed_group)
+
+    # Add feature groups to the map
+    successful_group.add_to(charging_map)
+    failed_group.add_to(charging_map)
+
+    # Add layer control to toggle between successful and failed locations
+    folium.LayerControl().add_to(charging_map)
 
     # Save the map to an HTML file
     map_file_path = 'charging_points_map.html'
