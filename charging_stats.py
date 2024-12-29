@@ -14,15 +14,10 @@ import io
 
 # Initialize Dash app
 app = dash.Dash(__name__)
-app.title = 'Charging Session Dashboard'
-
-# Placeholder for JSON data
-data = []
-sessions = []
+app.title = 'BMW CarData - Charging Session Dashboard'
 
 # Function to process JSON data
 def process_data(data):
-    global sessions
     sessions = []
     for session in data:
         try:
@@ -57,6 +52,7 @@ def process_data(data):
             })
         except KeyError:
             continue
+    return sessions
 
 # Layout
 app.layout = html.Div([
@@ -91,6 +87,9 @@ app.layout = html.Div([
             multiple=False
         )
     ]),
+
+    # Store component to hold session data
+    dcc.Store(id='session-data'),
 
     # Total Energy Gauges Panel
     html.Div([
@@ -159,7 +158,8 @@ app.layout = html.Div([
     [Output('session-dropdown', 'options'),
      Output('session-dropdown', 'value'),
      Output('total-energy-gauge', 'figure'),
-     Output('current-km-gauge', 'figure')],
+     Output('current-km-gauge', 'figure'),
+     Output('session-data', 'data')],
     [Input('upload-json', 'contents')]
 )
 def upload_json(contents):
@@ -167,7 +167,7 @@ def upload_json(contents):
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
         data = json.loads(decoded)
-        process_data(data)
+        sessions = process_data(data)
         options = [
             {'label': f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {s['location']}", 'value': i}
             for i, s in enumerate(sessions)
@@ -214,10 +214,8 @@ def upload_json(contents):
         ))
         current_km_fig.update_layout(height=400, width=300, template='plotly_white')
 
-
-
-        return options, 0, total_energy_fig, current_km_fig
-    return [], None, {}, {}
+        return options, 0, total_energy_fig, current_km_fig, sessions
+    return [], None, {}, {}, []
 
 @app.callback(
     [Output('charge-details-graph', 'figure'),
@@ -227,11 +225,17 @@ def upload_json(contents):
      Output('range-map', 'srcDoc'),
      Output('overview-scatterplot', 'figure'),
      Output('average-gridpower-scatterplot', 'figure')],
-    [Input('session-dropdown', 'value')]
+    [Input('session-dropdown', 'value'),
+     State('session-data', 'data')]
 )
-def update_dashboard(selected_session):
+def update_dashboard(selected_session, sessions):
     if selected_session is None or not sessions:
         return {}, "", {}, {}, "", {}, {}
+
+    # Convert start_time and end_time back to datetime objects
+    for session in sessions:
+        session['start_time'] = datetime.datetime.fromisoformat(session['start_time'])
+        session['end_time'] = datetime.datetime.fromisoformat(session['end_time'])
 
     session = sessions[selected_session]
 
@@ -369,7 +373,7 @@ def update_dashboard(selected_session):
         showlegend=False
     )
 
-   # Generate Folium map
+    # Generate Folium map
     selected_session = sessions[selected_session]  # Default to the first session if none is selected
     m = Map(location=[selected_session['latitude'], selected_session['longitude']], zoom_start=13, tiles="https://tiles.ext.ffmuc.net/osm/{z}/{x}/{y}.png", attr="OpenStreetMap")
     for session in sessions:
@@ -385,4 +389,4 @@ def update_dashboard(selected_session):
 
 # Run the app
 if __name__ == '__main__':
-    app.run_server(debug=True, port=8050,  threaded=True, host='0.0.0.0')
+    app.run_server(debug=True, port=8050, threaded=True, host='0.0.0.0')
