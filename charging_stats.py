@@ -56,7 +56,7 @@ def process_data(data):
 
 # Layout
 app.layout = html.Div([
-    html.H1('Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
+    html.H1('BMW CarData - Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
 
     # Disclaimer
     html.Div([
