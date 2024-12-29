@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  dash-app:
+    build: .
+    container_name: dash-app
+    restart: always
+    environment:
+      - DASH_DEBUG_MODE=False
+    expose:
+      - "8050"
+    networks:
+      - webnet
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/certs:/etc/nginx/certs
+      - ./nginx/html:/usr/share/nginx/html
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - webnet
+    depends_on:
+      - dash-app
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    restart: unless-stopped
+    volumes:
+      - ./nginx/certs:/etc/letsencrypt
+      - ./nginx/html:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - webnet
+
+networks:
+  webnet:
