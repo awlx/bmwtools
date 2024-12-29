@@ -258,11 +258,13 @@ def update_dashboard(selected_session):
 
     # Combined gauges
     combined_gauges = go.Figure()
+
+    # Average Grid Power gauge
     combined_gauges.add_trace(go.Indicator(
         mode="gauge+number",
         value=session['avg_power'],
         title={'text': "Average Grid Power (kW)"},
-        domain={'x': [0, 0.5], 'y': [0.6, 1]},
+        domain={'x': [0, 0.45], 'y': [0.6, 1]},  # Adjust domain to leave space on the right
         gauge={
             'axis': {'range': [None, max([s['avg_power'] for s in sessions]) + 10]},
             'bar': {'color': "darkblue"},
@@ -272,36 +274,43 @@ def update_dashboard(selected_session):
             ]
         }
     ))
+
+    # Cost gauge
     combined_gauges.add_trace(go.Indicator(
         mode="gauge+number",
         value=session['cost'],
         title={'text': "Cost (€)"},
-        domain={'x': [0.5, 1], 'y': [0.6, 1]},
+        domain={'x': [0.55, 1], 'y': [0.6, 1]},  # Adjust domain to leave space on the left
         gauge={
             'axis': {'range': [0, max([s['cost'] for s in sessions]) + 10]},
             'bar': {'color': "green"},
         }
     ))
+
+    # Efficiency gauge
     combined_gauges.add_trace(go.Indicator(
         mode="gauge+number",
         value=session['efficiency'] * 100,
         title={'text': "Efficiency (%)"},
-        domain={'x': [0, 0.5], 'y': [0.2, 0.6]},
+        domain={'x': [0, 0.45], 'y': [0.2, 0.6]},  # Adjust domain to leave space on the right
         gauge={
             'axis': {'range': [0, 100]},
             'bar': {'color': "orange"},
         }
     ))
+
+    # Energy Added gauge
     combined_gauges.add_trace(go.Indicator(
         mode="gauge+number",
         value=session['energy_added'],
         title={'text': "Energy Added (kWh)"},
-        domain={'x': [0.5, 1], 'y': [0.2, 0.6]},
+        domain={'x': [0.55, 1], 'y': [0.2, 0.6]},  # Adjust domain to leave space on the left
         gauge={
             'axis': {'range': [0, max([s['energy_added'] for s in sessions]) + 10]},
             'bar': {'color': "purple"},
         }
     ))
+
     combined_gauges.update_layout(
         template='plotly_white',
         height=600
