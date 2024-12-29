@@ -3,49 +3,52 @@ import folium
 from collections import defaultdict
 from geopy.distance import geodesic
 
-# Load the JSON data
-file_path = 'path_to_your_json_file.json'
-with open(file_path, 'r') as file:
-    charging_data = json.load(file)
+def load_data(file_path):
+    """Load JSON data from the specified file path."""
+    with open(file_path, 'r') as file:
+        return json.load(file)
 
-# Extract relevant data for mapping and count frequencies
-location_counts = defaultdict(int)
-locations = []
-failed_locations = defaultdict(int)
-
-# Define a function to find if a location is close to any existing location
 def find_close_location(lat, lon, locations, threshold=0.10):
+    """Find if a location is close to any existing location within a threshold distance."""
     for loc in locations:
         existing_lat, existing_lon, _ = loc
         if geodesic((lat, lon), (existing_lat, existing_lon)).km < threshold:
             return loc
     return None
 
-for entry in charging_data:
-    loc = entry.get("chargingLocation", {})
-    latitude = loc.get("mapMatchedLatitude")
-    longitude = loc.get("mapMatchedLongitude")
-    address = loc.get("formattedAddress")
-    session_energy = entry.get('energyConsumedFromPowerGridKwh', 0)  # Total energy for session
-    
-    if latitude and longitude:
-        location_key = (latitude, longitude, address)
-        if session_energy == 0:
-            close_location = find_close_location(latitude, longitude, failed_locations.keys())
-            if close_location:
-                failed_locations[close_location] += 1
-            else:
-                failed_locations[location_key] += 1
-        else:
-            close_location = find_close_location(latitude, longitude, locations)
-            if close_location:
-                location_counts[close_location] += 1
-            else:
-                location_counts[location_key] += 1
-                locations.append(location_key)
+def process_charging_data(charging_data):
+    """Process charging data to count frequencies and identify failed locations."""
+    location_counts = defaultdict(int)
+    failed_locations = defaultdict(int)
+    locations = []
 
-# Function to determine marker color based on frequency
+    for entry in charging_data:
+        loc = entry.get("chargingLocation", {})
+        latitude = loc.get("mapMatchedLatitude")
+        longitude = loc.get("mapMatchedLongitude")
+        address = loc.get("formattedAddress")
+        session_energy = entry.get('energyConsumedFromPowerGridKwh', 0)
+
+        if latitude and longitude:
+            location_key = (latitude, longitude, address)
+            if session_energy == 0:
+                close_location = find_close_location(latitude, longitude, failed_locations.keys())
+                if close_location:
+                    failed_locations[close_location] += 1
+                else:
+                    failed_locations[location_key] += 1
+            else:
+                close_location = find_close_location(latitude, longitude, locations)
+                if close_location:
+                    location_counts[close_location] += 1
+                else:
+                    location_counts[location_key] += 1
+                    locations.append(location_key)
+    
+    return locations, location_counts, failed_locations
+
 def get_marker_color(frequency, is_failed):
+    """Determine marker color based on frequency and failure status."""
     if is_failed:
         return 'blue'
     if frequency > 20:
@@ -59,12 +62,17 @@ def get_marker_color(frequency, is_failed):
     else:
         return 'green'
 
-# Create a map centered around the first charging point
-if locations:
+def create_map(locations, location_counts, failed_locations):
+    """Create a map with successful and failed charging locations."""
+    if not locations:
+        print("No locations to map.")
+        return
+
+    # Center the map around the first charging point
     first_location = locations[0]
     map_center = [first_location[0], first_location[1]]
     
-    # Specify the custom map server URL
+    # Create the map with a custom tile server
     charging_map = folium.Map(
         location=map_center,
         zoom_start=7,
@@ -107,5 +115,13 @@ if locations:
     map_file_path = 'charging_points_map.html'
     charging_map.save(map_file_path)
     print(f"Map saved to {map_file_path}")
-else:
-    print("No locations to map.")
+
+def main():
+    """Main function to load data, process it, and create the map."""
+    file_path = 'path_to_your_json_file.json'
+    charging_data = load_data(file_path)
+    locations, location_counts, failed_locations = process_charging_data(charging_data)
+    create_map(locations, location_counts, failed_locations)
+
+if __name__ == "__main__":
+    main()
