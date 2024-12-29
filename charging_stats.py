@@ -375,7 +375,7 @@ def update_dashboard(selected_session, sessions):
 
     # Generate Folium map
     selected_session = sessions[selected_session]  # Default to the first session if none is selected
-    m = Map(location=[selected_session['latitude'], selected_session['longitude']], zoom_start=13, tiles="https://tiles.ext.ffmuc.net/osm/{z}/{x}/{y}.png", attr="OpenStreetMap")
+    m = Map(location=[selected_session['latitude'], selected_session['longitude']], zoom_start=5, tiles="https://tiles.ext.ffmuc.net/osm/{z}/{x}/{y}.png", attr="OpenStreetMap")
     for session in sessions:
         Marker([session['latitude'], session['longitude']], popup=session['location']).add_to(m)
     map_html = m._repr_html_()
