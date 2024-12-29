@@ -317,7 +317,12 @@ def update_dashboard(selected_session, sessions):
             marker=dict(size=10, color='blue'),
             name=f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {s['location']}"
         ))
-    overview_fig.update_layout(showlegend=True,title='Energy added per charging session',)
+    overview_fig.update_layout(
+        showlegend=True,
+        title='Energy added per charging session',
+        yaxis_title='kWh',
+        xaxis_title='Date',
+        )
     # Average Grid Power scatterplot
     avg_gridpower_fig = go.Figure()
     for s in sessions:
