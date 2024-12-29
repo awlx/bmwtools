@@ -13,8 +13,14 @@ import io
 # Use this tool at your own risk and ensure you handle sensitive data appropriately.
 
 # Initialize Dash app
-app = dash.Dash(__name__)
+app = dash.Dash()
 app.title = 'Charging Session Dashboard'
+app.css.config.serve_locally = True
+app.scripts.config.serve_locally = True
+server = app.server
+
+# Set maximum file upload size (e.g., 5MB)
+app.server.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
 # Function to process JSON data
 def process_data(data):
@@ -53,6 +59,49 @@ def process_data(data):
         except KeyError:
             continue
     return sessions
+
+# Function to create a gauge trace
+def create_gauge_trace(value, title, color, domain_x, domain_y=[0, 1], range_max=None):
+    return go.Indicator(
+        mode="gauge+number",
+        value=value,
+        title={'text': title},
+        domain={'x': domain_x, 'y': domain_y},
+        gauge={'axis': {'range': [0, range_max] if range_max else [None, None]}, 'bar': {'color': color}}
+    )
+
+# Function to create a scatter plot
+def create_scatter_plot(x, y, title, xaxis_title, yaxis_title, color='blue', mode='markers', size=10):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=x,
+        y=y,
+        mode=mode,
+        marker=dict(size=size, color=color),
+        name=title
+    ))
+    fig.update_layout(
+        title=title,
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        template='plotly_white'
+    )
+    return fig
+
+# Function to create a Folium map
+def create_folium_map(sessions, selected_session=None):
+    if selected_session:
+        zoom_level = 13
+        center = [selected_session['latitude'], selected_session['longitude']]
+    else:
+        zoom_level = 5
+        center = [sessions[0]['latitude'], sessions[0]['longitude']] if sessions else [0, 0]
+
+    m = Map(location=center, zoom_start=zoom_level, tiles="https://tiles.ext.ffmuc.net/osm/{z}/{x}/{y}.png", attr="OpenStreetMap")
+    for session in sessions:
+        Marker([session['latitude'], session['longitude']], popup=session['location']).add_to(m)
+    map_html = m._repr_html_()
+    return map_html
 
 # Layout
 app.layout = html.Div([
@@ -172,7 +221,10 @@ def upload_json(contents, n_clicks):
     if contents:
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
-        data = json.loads(decoded)
+        try:
+            data = json.loads(decoded)
+        except json.JSONDecodeError:
+            return [], None, {}, {}, []
     elif n_clicks > 0:
         with open('FINAL_DEMO_CHARGING_DATA_SMOOTH_CURVES.JSON', 'r') as f:
             data = json.load(f)
@@ -188,42 +240,14 @@ def upload_json(contents, n_clicks):
     total_energy_ac = sum(s['energy_added'] for s in sessions if s['avg_power'] < 12)
 
     total_energy_fig = go.Figure()
-    # Total DC Energy gauge
-    total_energy_fig.add_trace(go.Indicator(
-        mode="gauge+number",
-        value=total_energy_dc,
-        title={'text': "Total DC Energy (kWh)"},
-        domain={'x': [0, 0.28], 'y': [0, 1]},  # Adjust domain to place it on the left with more space
-        gauge={'axis': {'range': [0, total_energy_dc + total_energy_ac + 10]}, 'bar': {'color': "blue"}}
-    ))
-
-    # Total AC Energy gauge
-    total_energy_fig.add_trace(go.Indicator(
-        mode="gauge+number",
-        value=total_energy_ac,
-        title={'text': "Total AC Energy (kWh)"},
-        domain={'x': [0.36, 0.64], 'y': [0, 1]},  # Adjust domain to place it in the middle with more space
-        gauge={'axis': {'range': [0, total_energy_dc + total_energy_ac + 10]}, 'bar': {'color': "green"}}
-    ))
-
-    # Total Energy (AC + DC) gauge
-    total_energy_fig.add_trace(go.Indicator(
-        mode="gauge+number",
-        value=total_energy_dc + total_energy_ac,
-        title={'text': "Total Energy (AC + DC)"},
-        domain={'x': [0.72, 1], 'y': [0, 1]},  # Adjust domain to place it on the right with more space
-        gauge={'axis': {'range': [0, total_energy_dc + total_energy_ac + 20]}, 'bar': {'color': "purple"}}
-    ))
+    total_energy_fig.add_trace(create_gauge_trace(total_energy_dc, "Total DC Energy (kWh)", "blue", [0, 0.28], range_max=total_energy_dc + total_energy_ac + 10))
+    total_energy_fig.add_trace(create_gauge_trace(total_energy_ac, "Total AC Energy (kWh)", "green", [0.36, 0.64], range_max=total_energy_dc + total_energy_ac + 10))
+    total_energy_fig.add_trace(create_gauge_trace(total_energy_dc + total_energy_ac, "Total Energy (AC + DC)", "purple", [0.72, 1], range_max=total_energy_dc + total_energy_ac + 20))
     total_energy_fig.update_layout(height=400, width=900, template='plotly_white')
 
     current_km = max(s['mileage'] for s in sessions if s['mileage'] > 0)
     current_km_fig = go.Figure()
-    current_km_fig.add_trace(go.Indicator(
-        mode="gauge+number",
-        value=current_km,
-        title={'text': "Current km"},
-        gauge={'axis': {'range': [0, current_km + 500]}, 'bar': {'color': "orange"}}
-    ))
+    current_km_fig.add_trace(create_gauge_trace(current_km, "Current km", "orange", [0, 1], range_max=current_km + 500))
     current_km_fig.update_layout(height=400, width=300, template='plotly_white')
 
     return options, 0, total_energy_fig, current_km_fig, sessions
@@ -251,21 +275,14 @@ def update_dashboard(selected_session, sessions):
     session = sessions[selected_session]
 
     # Charge details graph
-    charge_details_fig = go.Figure()
-    charge_details_fig.add_trace(go.Scatter(
+    charge_details_fig = create_scatter_plot(
         x=[session['start_time'], session['end_time']],
         y=[session['soc_start'], session['soc_end']],
-        mode='lines+markers',
-        name='SOC',
-        marker=dict(color='blue')
-    ))
-    charge_details_fig.update_layout(
         title='Charge Details',
         xaxis_title='Time',
         yaxis_title='SOC (%)',
-        xaxis=dict(showgrid=True, zeroline=True),
-        yaxis=dict(showgrid=True, zeroline=True),
-        template='plotly_white'
+        color='blue',
+        mode='lines+markers'
     )
 
     # Session info text
@@ -273,80 +290,21 @@ def update_dashboard(selected_session, sessions):
 
     # Combined gauges
     combined_gauges = go.Figure()
-
-    # Average Grid Power gauge
-    combined_gauges.add_trace(go.Indicator(
-        mode="gauge+number",
-        value=session['avg_power'],
-        title={'text': "Average Grid Power (kW)"},
-        domain={'x': [0, 0.45], 'y': [0.6, 1]},  # Adjust domain to leave space on the right
-        gauge={
-            'axis': {'range': [None, max([s['avg_power'] for s in sessions]) + 10]},
-            'bar': {'color': "darkblue"},
-            'steps': [
-                {'range': [0, session['avg_power'] / 2], 'color': "lightblue"},
-                {'range': [session['avg_power'] / 2, session['avg_power']], 'color': "blue"}
-            ]
-        }
-    ))
-
-    # Cost gauge
-    combined_gauges.add_trace(go.Indicator(
-        mode="gauge+number",
-        value=session['cost'],
-        title={'text': "Cost (€)"},
-        domain={'x': [0.55, 1], 'y': [0.6, 1]},  # Adjust domain to leave space on the left
-        gauge={
-            'axis': {'range': [0, max([s['cost'] for s in sessions]) + 10]},
-            'bar': {'color': "green"},
-        }
-    ))
-
-    # Efficiency gauge
-    combined_gauges.add_trace(go.Indicator(
-        mode="gauge+number",
-        value=session['efficiency'] * 100,
-        title={'text': "Efficiency (%)"},
-        domain={'x': [0, 0.45], 'y': [0.2, 0.6]},  # Adjust domain to leave space on the right
-        gauge={
-            'axis': {'range': [0, 100]},
-            'bar': {'color': "orange"},
-        }
-    ))
-
-    # Energy Added gauge
-    combined_gauges.add_trace(go.Indicator(
-        mode="gauge+number",
-        value=session['energy_added'],
-        title={'text': "Energy Added (kWh)"},
-        domain={'x': [0.55, 1], 'y': [0.2, 0.6]},  # Adjust domain to leave space on the left
-        gauge={
-            'axis': {'range': [0, max([s['energy_added'] for s in sessions]) + 10]},
-            'bar': {'color': "purple"},
-        }
-    ))
-
-    combined_gauges.update_layout(
-        template='plotly_white',
-        height=600
-    )
+    combined_gauges.add_trace(create_gauge_trace(session['avg_power'], "Average Grid Power (kW)", "darkblue", [0, 0.45], [0.6, 1], max([s['avg_power'] for s in sessions]) + 10))
+    combined_gauges.add_trace(create_gauge_trace(session['cost'], "Cost (€)", "green", [0.55, 1], [0.6, 1], max([s['cost'] for s in sessions]) + 10))
+    combined_gauges.add_trace(create_gauge_trace(session['efficiency'] * 100, "Efficiency (%)", "orange", [0, 0.45], [0.2, 0.6], 100))
+    combined_gauges.add_trace(create_gauge_trace(session['energy_added'], "Energy Added (kWh)", "purple", [0.55, 1], [0.2, 0.6], max([s['energy_added'] for s in sessions]) + 10))
+    combined_gauges.update_layout(template='plotly_white', height=600)
 
     # Grid Power over Time graph
-    grid_power_fig = go.Figure()
-    grid_power_fig.add_trace(go.Scatter(
+    grid_power_fig = create_scatter_plot(
         x=[session['start_time'] + datetime.timedelta(seconds=i * (session['end_time'] - session['start_time']).total_seconds() / len(session['grid_power_start'])) for i in range(len(session['grid_power_start']))],
         y=session['grid_power_start'],
-        mode='lines+markers',
-        name='Grid Power',
-        marker=dict(color='green')
-    ))
-    grid_power_fig.update_layout(
         title='Grid Power Over Time',
         xaxis_title='Time',
         yaxis_title='Grid Power (kW)',
-        xaxis=dict(showgrid=True, zeroline=True),
-        yaxis=dict(showgrid=True, zeroline=True),
-        template='plotly_white'
+        color='green',
+        mode='lines+markers'
     )
 
     # Overview scatterplot
@@ -359,22 +317,16 @@ def update_dashboard(selected_session, sessions):
             marker=dict(size=10, color='blue'),
             name=f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {s['location']}"
         ))
-    overview_fig.update_layout(
-        title='Overview of All Charging Sessions',
-        xaxis_title='Start Time',
-        yaxis_title='Energy Added (kWh)',
-        template='plotly_white'
-    )
-
+    overview_fig.update_layout(showlegend=True)
     # Average Grid Power scatterplot
     avg_gridpower_fig = go.Figure()
-    for session in sessions:
+    for s in sessions:
         avg_gridpower_fig.add_trace(go.Scatter(
-            x=[i for i in range(len(session['grid_power_start']))],
-            y=session['grid_power_start'],
+            x=[i for i in range(len(s['grid_power_start']))],
+            y=s['grid_power_start'],
             mode='markers',
-            marker=dict(size=6, color=session['grid_power_start'], colorscale='Viridis', showscale=False),
-            name=f"Session {session['start_time']}"
+            marker=dict(size=6, color=s['grid_power_start'], colorscale='Viridis', showscale=False),
+            name=f"Session {s['start_time']}"
         ))
     avg_gridpower_fig.update_layout(
         title='Average Grid Power Across All Sessions',
@@ -385,20 +337,10 @@ def update_dashboard(selected_session, sessions):
     )
 
     # Generate Folium map
-    selected_session = sessions[selected_session]  # Default to the first session if none is selected
-    zoom_level = 13 if selected_session else 5  # Zoom in if a session is selected, otherwise use default zoom level
-    m = Map(location=[selected_session['latitude'], selected_session['longitude']], zoom_start=zoom_level, tiles="https://tiles.ext.ffmuc.net/osm/{z}/{x}/{y}.png", attr="OpenStreetMap")
-    for session in sessions:
-        Marker([session['latitude'], session['longitude']], popup=session['location']).add_to(m)
-    map_html = m._repr_html_()
-    # Render the map to an HTML string
-    map_html = io.BytesIO()
-    m.save(map_html, close_file=False)
-    map_html.seek(0)
-    map_html_content = map_html.read().decode('utf-8')
+    map_html_content = create_folium_map(sessions, session)
 
     return charge_details_fig, session_info, combined_gauges, grid_power_fig, map_html_content, overview_fig, avg_gridpower_fig
 
 # Run the app
 if __name__ == '__main__':
-    app.run_server(debug=True, port=8050, threaded=True, host='0.0.0.0')
+    app.run_server(debug=False, port=8050, threaded=True, host='0.0.0.0')
