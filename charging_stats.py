@@ -65,7 +65,7 @@ app.layout = html.Div([
     # Disclaimer
     html.Div([
         html.P(
-            'Disclaimer: This application stores all uploaded data in memory. Use at your own risk.',
+            'Disclaimer: This application stores all uploaded data in memory, if you refresh your session is lost. Use at your own risk.',
             style={'textAlign': 'center', 'color': 'red', 'fontWeight': 'bold'}
         )
     ]),
