@@ -8,6 +8,10 @@ from folium import Map, Marker
 import base64
 import io
 
+# DISCLAIMER
+# This application stores all uploaded data in memory for processing.
+# Use this tool at your own risk and ensure you handle sensitive data appropriately.
+
 # Initialize Dash app
 app = dash.Dash(__name__)
 app.title = 'Charging Session Dashboard'
@@ -58,6 +62,14 @@ def process_data(data):
 app.layout = html.Div([
     html.H1('Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
 
+    # Disclaimer
+    html.Div([
+        html.P(
+            'Disclaimer: This application stores all uploaded data in memory. Use at your own risk.',
+            style={'textAlign': 'center', 'color': 'red', 'fontWeight': 'bold'}
+        )
+    ]),
+
     # File upload component
     html.Div([
         dcc.Upload(
@@ -84,17 +96,17 @@ app.layout = html.Div([
     html.Div([
         dcc.Graph(
             id='total-energy-gauge',
-            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'}
-        ),
-        dcc.Graph(
-            id='current-km-gauge',
-            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'}
+            style={'height': '400px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
         ),
         dcc.Graph(
             id='sum-ac-dc-gauge',
-            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'}
+            style={'height': '400px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
+        ),
+        dcc.Graph(
+            id='current-km-gauge',
+            style={'height': '400px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
         )
-    ], style={'marginBottom': '20px', 'display': 'flex', 'gap': '20px'}),
+    ], style={'marginBottom': '20px', 'textAlign': 'center'}),
 
     # Overview Scatterplots
     html.Div([
@@ -361,4 +373,4 @@ def update_dashboard(selected_session):
 
 # Run the app
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=True, port=8050)
