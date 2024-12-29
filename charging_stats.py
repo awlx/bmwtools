@@ -96,11 +96,7 @@ app.layout = html.Div([
     html.Div([
         dcc.Graph(
             id='total-energy-gauge',
-            style={'height': '400px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
-        ),
-        dcc.Graph(
-            id='sum-ac-dc-gauge',
-            style={'height': '400px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
+            style={'height': '400px', 'width': '60%', 'display': 'inline-block', 'margin': '10px'}
         ),
         dcc.Graph(
             id='current-km-gauge',
@@ -163,8 +159,7 @@ app.layout = html.Div([
     [Output('session-dropdown', 'options'),
      Output('session-dropdown', 'value'),
      Output('total-energy-gauge', 'figure'),
-     Output('current-km-gauge', 'figure'),
-     Output('sum-ac-dc-gauge', 'figure')],
+     Output('current-km-gauge', 'figure')],
     [Input('upload-json', 'contents')]
 )
 def upload_json(contents):
@@ -181,20 +176,33 @@ def upload_json(contents):
         total_energy_ac = sum(s['energy_added'] for s in sessions if s['avg_power'] < 12)
 
         total_energy_fig = go.Figure()
+        # Total DC Energy gauge
         total_energy_fig.add_trace(go.Indicator(
             mode="gauge+number",
             value=total_energy_dc,
             title={'text': "Total DC Energy (kWh)"},
+            domain={'x': [0, 0.28], 'y': [0, 1]},  # Adjust domain to place it on the left with more space
             gauge={'axis': {'range': [0, total_energy_dc + total_energy_ac + 10]}, 'bar': {'color': "blue"}}
         ))
+
+        # Total AC Energy gauge
         total_energy_fig.add_trace(go.Indicator(
             mode="gauge+number",
             value=total_energy_ac,
             title={'text': "Total AC Energy (kWh)"},
-            domain={'x': [0.5, 1], 'y': [0, 1]},
+            domain={'x': [0.36, 0.64], 'y': [0, 1]},  # Adjust domain to place it in the middle with more space
             gauge={'axis': {'range': [0, total_energy_dc + total_energy_ac + 10]}, 'bar': {'color': "green"}}
         ))
-        total_energy_fig.update_layout(height=400, template='plotly_white')
+
+        # Total Energy (AC + DC) gauge
+        total_energy_fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=total_energy_dc + total_energy_ac,
+            title={'text': "Total Energy (AC + DC)"},
+            domain={'x': [0.72, 1], 'y': [0, 1]},  # Adjust domain to place it on the right with more space
+            gauge={'axis': {'range': [0, total_energy_dc + total_energy_ac + 20]}, 'bar': {'color': "purple"}}
+        ))
+        total_energy_fig.update_layout(height=400, width=900, template='plotly_white')
 
         current_km = max(s['mileage'] for s in sessions if s['mileage'] > 0)
         current_km_fig = go.Figure()
@@ -204,19 +212,12 @@ def upload_json(contents):
             title={'text': "Current km"},
             gauge={'axis': {'range': [0, current_km + 500]}, 'bar': {'color': "orange"}}
         ))
-        current_km_fig.update_layout(height=400, template='plotly_white')
+        current_km_fig.update_layout(height=400, width=300, template='plotly_white')
 
-        sum_ac_dc_fig = go.Figure()
-        sum_ac_dc_fig.add_trace(go.Indicator(
-            mode="gauge+number",
-            value=total_energy_dc + total_energy_ac,
-            title={'text': "Total Energy (AC + DC)"},
-            gauge={'axis': {'range': [0, total_energy_dc + total_energy_ac + 20]}, 'bar': {'color': "purple"}}
-        ))
-        sum_ac_dc_fig.update_layout(height=400, template='plotly_white')
 
-        return options, 0, total_energy_fig, current_km_fig, sum_ac_dc_fig
-    return [], None, {}, {}, {}
+
+        return options, 0, total_energy_fig, current_km_fig
+    return [], None, {}, {}
 
 @app.callback(
     [Output('charge-details-graph', 'figure'),
@@ -359,10 +360,12 @@ def update_dashboard(selected_session):
         showlegend=False
     )
 
-    # Generate Folium map
-    m = Map(location=[session['latitude'], session['longitude']], zoom_start=13, tiles="https://tiles.ext.ffmuc.net/osm/{z}/{x}/{y}.png", attr="OpenStreetMap")
-    Marker([session['latitude'], session['longitude']], popup=session['location']).add_to(m)
-
+   # Generate Folium map
+    selected_session = sessions[selected_session]  # Default to the first session if none is selected
+    m = Map(location=[selected_session['latitude'], selected_session['longitude']], zoom_start=13, tiles="https://tiles.ext.ffmuc.net/osm/{z}/{x}/{y}.png", attr="OpenStreetMap")
+    for session in sessions:
+        Marker([session['latitude'], session['longitude']], popup=session['location']).add_to(m)
+    map_html = m._repr_html_()
     # Render the map to an HTML string
     map_html = io.BytesIO()
     m.save(map_html, close_file=False)
