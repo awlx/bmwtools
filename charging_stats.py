@@ -14,7 +14,7 @@ import io
 
 # Initialize Dash app
 app = dash.Dash()
-app.title = 'Charging Session Dashboard'
+app.title = 'BMW CarData - Charging Session Dashboard'
 app.css.config.serve_locally = True
 app.scripts.config.serve_locally = True
 server = app.server
@@ -105,7 +105,7 @@ def create_folium_map(sessions, selected_session=None):
 
 # Layout
 app.layout = html.Div([
-    html.H1('Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
+    html.H1('BMW CarData - Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
 
     # Disclaimer
     html.Div([
@@ -330,7 +330,7 @@ def update_dashboard(selected_session, sessions):
         ))
     avg_gridpower_fig.update_layout(
         title='Average Grid Power Across All Sessions',
-        xaxis_title='Session Progress',
+        xaxis_title='Session Time',
         yaxis_title='Grid Power (kW)',
         template='plotly_white',
         showlegend=False
