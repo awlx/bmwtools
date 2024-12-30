@@ -195,13 +195,13 @@ app.layout = html.Div([
     # Top Providers
     html.Div([
         html.Div([
+            html.H4("Top 5 Successful Providers"),
+            html.Ul(id='top-successful-providers', style={'listStyleType': 'none', 'padding': '0'})
+        ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+        html.Div([
             html.H4("Top 5 Failed Providers"),
             html.Ul(id='top-failed-providers', style={'listStyleType': 'none', 'padding': '0'})
         ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '5%'}),
-        html.Div([
-            html.H4("Top 5 Successful Providers"),
-            html.Ul(id='top-successful-providers', style={'listStyleType': 'none', 'padding': '0'})
-        ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top'})
     ], style={'textAlign': 'center', 'marginBottom': '20px', 'clear': 'both'}),
    
     # Overview Scatterplots
