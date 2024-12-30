@@ -30,9 +30,9 @@ def process_data(data):
             end_time = datetime.datetime.fromtimestamp(session['endTime'])
             soc_start = session['displayedStartSoc']
             soc_end = session['displayedSoc']
-            energy_added = session['energyConsumedFromPowerGridKwh']
+            energy_from_grid = session['energyConsumedFromPowerGridKwh']
             cost = session.get('chargingCostInformation', {}).get('calculatedChargingCost', 0)
-            efficiency = session.get('energyIncreaseHvbKwh', 0) / energy_added if energy_added else 0
+            efficiency = session.get('energyIncreaseHvbKwh', 0) / energy_from_grid if energy_from_grid else 0
             location = session.get('chargingLocation', {}).get('formattedAddress', 'Unknown Location')
             latitude = session.get('chargingLocation', {}).get('mapMatchedLatitude', 0)
             longitude = session.get('chargingLocation', {}).get('mapMatchedLongitude', 0)
@@ -45,8 +45,8 @@ def process_data(data):
                 'end_time': end_time,
                 'soc_start': soc_start,
                 'soc_end': soc_end,
-                'energy_added': energy_added,
-                'energyIncreaseHvbKwh': session.get('energyIncreaseHvbKwh', 0),
+                'energy_from_grid': energy_from_grid,
+                'energy_added_hvb': session.get('energyIncreaseHvbKwh', 0),
                 'cost': cost,
                 'efficiency': efficiency,
                 'location': location,
@@ -64,10 +64,10 @@ def process_data(data):
 def calculate_estimated_battery_capacity(sessions):
     estimated_battery_capacity = []
     for session in sessions:
-        if session['energyIncreaseHvbKwh'] >= 15:
+        if session['energy_added_hvb'] >= 15:
             soc_change = session['soc_end'] - session['soc_start']
             if soc_change != 0:
-                estimated_capacity = (session['energyIncreaseHvbKwh'] * 100) / soc_change
+                estimated_capacity = (session['energy_added_hvb'] * 100) / soc_change
             else:
                 estimated_capacity = 0
             estimated_battery_capacity.append({
@@ -257,8 +257,8 @@ def upload_json(contents, n_clicks):
         {'label': f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {s['location']}", 'value': i}
         for i, s in enumerate(sessions)
     ]
-    total_energy_dc = sum(s['energyIncreaseHvbKwh'] for s in sessions if s['avg_power'] >= 12)
-    total_energy_ac = sum(s['energyIncreaseHvbKwh'] for s in sessions if s['avg_power'] < 12)
+    total_energy_dc = sum(s['energy_added_hvb'] for s in sessions if s['avg_power'] >= 12)
+    total_energy_ac = sum(s['energy_added_hvb'] for s in sessions if s['avg_power'] < 12)
 
     total_energy_fig = go.Figure()
     total_energy_fig.add_trace(create_gauge_trace(total_energy_dc, "Total DC Energy (kWh)", "blue", [0, 0.28], range_max=total_energy_dc + total_energy_ac + 10))
@@ -308,14 +308,14 @@ def update_dashboard(selected_session, sessions):
     )
 
     # Session info text
-    session_info = f"Energy Added: {session['energyIncreaseHvbKwh']} kWh, Cost: €{session['cost']}, Efficiency: {session['efficiency']:.2%}, Location: {session['location']}"
+    session_info = f"Energy Added: {session['energy_added_hvb']} kWh, Cost: €{session['cost']}, Efficiency: {session['efficiency']:.2%}, Location: {session['location']}"
 
     # Combined gauges
     combined_gauges = go.Figure()
     combined_gauges.add_trace(create_gauge_trace(session['avg_power'], "Average Grid Power (kW)", "darkblue", [0, 0.45], [0.6, 1], max([s['avg_power'] for s in sessions]) + 10))
     combined_gauges.add_trace(create_gauge_trace(session['cost'], "Cost (€)", "green", [0.55, 1], [0.6, 1], max([s['cost'] for s in sessions]) + 10))
     combined_gauges.add_trace(create_gauge_trace(session['efficiency'] * 100, "Efficiency (%)", "orange", [0, 0.45], [0.2, 0.6], 100))
-    combined_gauges.add_trace(create_gauge_trace(session['energyIncreaseHvbKwh'], "Energy Added (kWh)", "purple", [0.55, 1], [0.2, 0.6], max([s['energyIncreaseHvbKwh'] for s in sessions]) + 10))
+    combined_gauges.add_trace(create_gauge_trace(session['energy_added_hvb'], "Energy Added (kWh)", "purple", [0.55, 1], [0.2, 0.6], max([s['energy_added_hvb'] for s in sessions]) + 10))
     combined_gauges.update_layout(template='plotly_white', height=600)
 
     # Grid Power over Time graph
@@ -334,10 +334,10 @@ def update_dashboard(selected_session, sessions):
     for s in sessions:
         overview_fig.add_trace(go.Scatter(
             x=[s['start_time']],
-            y=[s['energyIncreaseHvbKwh']],
+            y=[s['energy_added_hvb']],
             mode='markers',
             marker=dict(size=10, color='blue'),
-            name=f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {[s['energyIncreaseHvbKwh']]} kWh - {s['location']}"
+            name=f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {[s['energy_added_hvb']]} kWh - {s['location']}"
         ))
     overview_fig.update_layout(
         showlegend=True,
