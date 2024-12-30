@@ -64,7 +64,7 @@ def process_data(data):
 def calculate_estimated_battery_capacity(sessions):
     estimated_battery_capacity = []
     for session in sessions:
-        if session['energy_added_hvb'] >= 15:
+        if session['energy_added_hvb'] >= 30:
             soc_change = session['soc_end'] - session['soc_start']
             if soc_change != 0:
                 estimated_capacity = (session['energy_added_hvb'] * 100) / soc_change
