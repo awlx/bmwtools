@@ -137,7 +137,7 @@ app.layout = html.Div([
         dcc.Upload(
             id='upload-json',
             children=html.Div([
-                'Drag and Drop or ', html.A('Select a JSON File')
+                'Drag and Drop or ', html.A('Select your CarData JSON file (BMW-CarData-Ladehistorie_*.json)')
             ]),
             style={
                 'width': '50%',
