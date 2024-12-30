@@ -2,10 +2,7 @@ import json
 from collections import defaultdict
 from fuzzywuzzy import process
 import re
-
-# Load the JSON data
-with open('./path_to_your_json_file.json') as f:
-    data = json.load(f)
+import datetime
 
 # Initialize dictionaries to store the count of failed and successful sessions per provider
 failed_providers_count = defaultdict(int)
@@ -37,62 +34,68 @@ def fuzzy_normalize_provider_name(provider_name):
         # If the confidence is high enough, return the original version of the matched provider name
         if confidence > 90:  # 90% confidence threshold for matching
             original_name = original_provider_names[best_match_cleaned]  # Get the original case name
-            print(f"Matched '{provider_name}' with '{original_name}' (confidence: {confidence})")  # Debug output
             return original_name
 
     # If no match or confidence is low, consider this a new provider
-    print(f"New provider: '{provider_name}' added to known providers")  # Debug output
     known_providers.append(provider_name_cleaned)  # Store the cleaned name for matching
     original_provider_names[provider_name_cleaned] = provider_name  # Store the original name
     return provider_name
 
-# Loop through each session
-for session in data:
-    # Check if 'displayedSoc' and 'displayedStartSoc' exist in the session
-    if 'displayedSoc' in session and 'displayedStartSoc' in session:
-        soc = session['displayedSoc']
-        start_soc = session['displayedStartSoc']
+def process_sessions(data, start_date=None, end_date=None):
+    global total_failed_sessions, total_successful_sessions
+    for session in data:
+        # Convert timestamps to datetime objects
+        session_start_time = datetime.datetime.fromtimestamp(session['startTime'])
         
-        # Check if 'publicChargingPoint' and 'providerName' exist
-        if 'publicChargingPoint' in session and 'potentialChargingPointMatches' in session['publicChargingPoint']:
-            # Extract the providerName (assuming first match is relevant)
-            provider_name = session['publicChargingPoint']['potentialChargingPointMatches'][0].get('providerName', 'Unknown')
+        # Filter by date range if provided
+        if start_date and end_date:
+            if not (start_date <= session_start_time <= end_date):
+                continue
+
+        # Check if 'displayedSoc' and 'displayedStartSoc' exist in the session
+        if 'displayedSoc' in session and 'displayedStartSoc' in session:
+            soc = session['displayedSoc']
+            start_soc = session['displayedStartSoc']
             
-            # Normalize provider name using fuzzy matching (case-insensitive but stores the original name)
-            provider_name = fuzzy_normalize_provider_name(provider_name)
-            
-            # Check for failed sessions (start SOC equals end SOC)
-            if soc == start_soc:
-                total_failed_sessions += 1
-                failed_providers_count[provider_name] += 1
-            else:  # Successful sessions
-                total_successful_sessions += 1
-                successful_providers_count[provider_name] += 1
+            # Check if 'publicChargingPoint' and 'providerName' exist
+            if 'publicChargingPoint' in session and 'potentialChargingPointMatches' in session['publicChargingPoint']:
+                # Extract the providerName (assuming first match is relevant)
+                provider_name = session['publicChargingPoint']['potentialChargingPointMatches'][0].get('providerName', 'Unknown')
+                
+                # Normalize provider name using fuzzy matching (case-insensitive but stores the original name)
+                provider_name = fuzzy_normalize_provider_name(provider_name)
+                
+                # Check for failed sessions (start SOC equals end SOC)
+                if soc == start_soc:
+                    total_failed_sessions += 1
+                    failed_providers_count[provider_name] += 1
+                else:  # Successful sessions
+                    total_successful_sessions += 1
+                    successful_providers_count[provider_name] += 1
 
-# Sort the providers by the number of failed and successful sessions in descending order
-sorted_failed_providers = sorted(failed_providers_count.items(), key=lambda item: item[1], reverse=True)
-sorted_successful_providers = sorted(successful_providers_count.items(), key=lambda item: item[1], reverse=True)
+def get_session_stats(data=None, file_path=None, start_date=None, end_date=None):
+    global failed_providers_count, successful_providers_count, total_failed_sessions, total_successful_sessions
+    # Reset global variables
+    failed_providers_count = defaultdict(int)
+    successful_providers_count = defaultdict(int)
+    total_failed_sessions = 0
+    total_successful_sessions = 0
+    original_provider_names.clear()
+    known_providers.clear()
 
-# Display the provider names and their corresponding number of failed sessions
-if sorted_failed_providers:
-    print("\nNumber of failed sessions per provider (sorted by failed sessions):")
-    for provider, count in sorted_failed_providers:
-        total_sessions_for_provider = count + successful_providers_count[provider]
-        failure_percentage = (count / total_sessions_for_provider) * 100
-        print(f"{provider}: {count} failed sessions ({failure_percentage:.2f}% of total sessions)")
-else:
-    print("No failed sessions found.")
+    if file_path:
+        with open(file_path) as f:
+            data = json.load(f)
+    if data:
+        process_sessions(data, start_date, end_date)
 
-# Output the total number of failed sessions
-print(f"\nTotal number of failed sessions: {total_failed_sessions}")
+    sorted_failed_providers = sorted(failed_providers_count.items(), key=lambda item: item[1], reverse=True)
+    sorted_successful_providers = sorted(successful_providers_count.items(), key=lambda item: item[1], reverse=True)
 
-# Display the provider names and their corresponding number of successful sessions
-if sorted_successful_providers:
-    print("\nNumber of successful sessions per provider (sorted by successful sessions):")
-    for provider, count in sorted_successful_providers:
-        print(f"{provider}: {count} successful sessions")
-else:
-    print("No successful sessions found.")
-
-# Output the total number of successful sessions
-print(f"\nTotal number of successful sessions: {total_successful_sessions}")
+    return {
+        'total_sessions': total_failed_sessions + total_successful_sessions,
+        'total_failed_sessions': total_failed_sessions,
+        'total_successful_sessions': total_successful_sessions,
+        'top_failed_providers': sorted_failed_providers[:5],
+        'top_successful_providers': sorted_successful_providers[:5]
+    }

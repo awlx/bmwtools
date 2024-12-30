@@ -161,6 +161,18 @@ app.layout = html.Div([
     # Store component to hold session data
     dcc.Store(id='session-data'),
 
+    # Datepicker to select time range
+    html.Div([
+        html.Label('Select Date Range for analysis (optional):', style={'fontWeight': 'bold', 'color': '#1f77b4'}),
+        dcc.DatePickerRange(
+            id='date-picker-range',
+            start_date_placeholder_text='Start Date',
+            end_date_placeholder_text='End Date',
+            display_format='YYYY-MM-DD',
+            style={'border': '2px solid #1f77b4', 'borderRadius': '5px', 'marginBottom': '20px'}
+        )
+    ], style={'width': '50%', 'margin': 'auto', 'marginBottom': '20px'}),
+
     # Total Energy Gauges Panel
     html.Div([
         dcc.Graph(
@@ -259,9 +271,11 @@ app.layout = html.Div([
      Output('top-failed-providers', 'children'),
      Output('top-successful-providers', 'children')],
     [Input('upload-json', 'contents'),
-     Input('load-demo-data', 'n_clicks')]
+     Input('load-demo-data', 'n_clicks'),
+     Input('date-picker-range', 'start_date'),
+     Input('date-picker-range', 'end_date')]
 )
-def upload_json(contents, n_clicks):
+def upload_json(contents, n_clicks, start_date, end_date):
     if contents:
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
@@ -276,6 +290,13 @@ def upload_json(contents, n_clicks):
         return [], None, {}, {}, [], {}, {}, {}, [], []
 
     sessions = process_data(data)
+    
+    # Filter sessions by date range if selected
+    if start_date and end_date:
+        start_date = datetime.datetime.fromisoformat(start_date)
+        end_date = datetime.datetime.fromisoformat(end_date)
+        sessions = [s for s in sessions if start_date <= s['start_time'] <= end_date]
+
     options = [
         {'label': f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {s['location']}", 'value': i}
         for i, s in enumerate(sessions)
@@ -294,7 +315,7 @@ def upload_json(contents, n_clicks):
     current_km_fig.add_trace(create_gauge_trace(current_km, "Current km", "orange", [0, 1], range_max=current_km + 500))
     current_km_fig.update_layout(height=400, width=300, template='plotly_white')
 
-    session_stats = get_session_stats(data=data)
+    session_stats = get_session_stats(data=data, start_date=start_date, end_date=end_date)
     total_sessions_fig = go.Figure()
     failed_sessions_fig = go.Figure()
     successful_sessions_fig = go.Figure()
