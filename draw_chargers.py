@@ -2,6 +2,8 @@ import json
 import folium
 from collections import defaultdict
 from geopy.distance import geodesic
+from geopy.point import Point
+from datetime import datetime
 
 def load_data(file_path):
     """Load JSON data from the specified file path."""
@@ -16,7 +18,7 @@ def find_close_location(lat, lon, locations, threshold=0.10):
             return loc
     return None
 
-def process_charging_data(charging_data):
+def process_charging_data(charging_data, start_date=None, end_date=None):
     """Process charging data to count frequencies and identify failed locations."""
     location_counts = defaultdict(int)
     failed_locations = defaultdict(int)
@@ -28,6 +30,11 @@ def process_charging_data(charging_data):
         longitude = loc.get("mapMatchedLongitude")
         address = loc.get("formattedAddress")
         session_energy = entry.get('energyConsumedFromPowerGridKwh', 0)
+        session_start_time = datetime.fromtimestamp(entry.get('startTime'))
+
+        if start_date and end_date:
+            if not (start_date <= session_start_time <= end_date):
+                continue
 
         if latitude and longitude:
             location_key = (latitude, longitude, address)
@@ -62,20 +69,32 @@ def get_marker_color(frequency, is_failed):
     else:
         return 'green'
 
-def create_map(locations, location_counts, failed_locations):
-    """Create a map with successful and failed charging locations."""
+def calculate_map_center(locations):
+    """Calculate the geographic center (centroid) of the map based on all locations."""
+    if not locations:
+        return [0, 0]
+    
+    # Convert locations to geopy Points
+    points = [Point(lat, lon) for lat, lon, addr in locations]
+    
+    # Calculate centroid
+    centroid = Point(sum(p.latitude for p in points) / len(points), sum(p.longitude for p in points) / len(points))
+    
+    return [centroid.latitude, centroid.longitude]
+
+def create_map_base(locations, location_counts, failed_locations):
+    """Create a base map with successful and failed charging locations."""
     if not locations:
         print("No locations to map.")
-        return
+        return None
 
-    # Center the map around the first charging point
-    first_location = locations[0]
-    map_center = [first_location[0], first_location[1]]
+    # Center the map around the geographic center of all charging points
+    map_center = calculate_map_center(locations)
     
     # Create the map with a custom tile server
     charging_map = folium.Map(
         location=map_center,
-        zoom_start=7,
+        zoom_start=5,
         tiles="https://tiles.ext.ffmuc.net/osm/{z}/{x}/{y}.png",
         attr='Map data © OpenStreetMap contributors, Tiles © FFMUC'
     )
@@ -111,16 +130,29 @@ def create_map(locations, location_counts, failed_locations):
     # Add layer control to toggle between successful and failed locations
     folium.LayerControl().add_to(charging_map)
 
-    # Save the map to an HTML file
-    map_file_path = 'charging_points_map.html'
-    charging_map.save(map_file_path)
-    print(f"Map saved to {map_file_path}")
+    return charging_map
+
+def create_map(locations, location_counts, failed_locations):
+    """Create a map with successful and failed charging locations and save to an HTML file."""
+    charging_map = create_map_base(locations, location_counts, failed_locations)
+    if charging_map:
+        map_file_path = 'charging_points_map.html'
+        charging_map.save(map_file_path)
+        print(f"Map saved to {map_file_path}")
+
+def create_map_string(charging_data, start_date=None, end_date=None):
+    """Create a map with successful and failed charging locations and return as HTML string."""
+    locations, location_counts, failed_locations = process_charging_data(charging_data, start_date, end_date)
+    charging_map = create_map_base(locations, location_counts, failed_locations)
+    return charging_map._repr_html_() if charging_map else ""
 
 def main():
     """Main function to load data, process it, and create the map."""
     file_path = 'path_to_your_json_file.json'
     charging_data = load_data(file_path)
-    locations, location_counts, failed_locations = process_charging_data(charging_data)
+    start_date = datetime(2021, 1, 1)
+    end_date = datetime(2021, 12, 31)
+    locations, location_counts, failed_locations = process_charging_data(charging_data, start_date, end_date)
     create_map(locations, location_counts, failed_locations)
 
 if __name__ == "__main__":

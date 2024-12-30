@@ -6,6 +6,7 @@ import datetime
 from folium import Map, Marker
 import base64
 from successful_failed_sessions import get_session_stats
+from draw_chargers import load_data, process_charging_data, create_map_string
 
 # DISCLAIMER
 # This application stores all uploaded data in memory for processing.
@@ -220,6 +221,11 @@ app.layout = html.Div([
         )
     ], style={'marginBottom': '20px'}),
 
+    # Second map for charging locations
+    html.Div([
+        html.Iframe(id='charging-locations-map', style={'width': '100%', 'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'})
+    ], style={'marginBottom': '20px'}),
+
     # Dropdown to select session
     html.Div([
         html.Label('Select Charging Session by Time and Location:', style={'fontWeight': 'bold', 'color': '#1f77b4'}),
@@ -255,7 +261,7 @@ app.layout = html.Div([
             dcc.Graph(id='charge-details-graph', style={'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'}),
             dcc.Graph(id='grid-power-graph', style={'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px'})
         ], style={'flex': '1', 'paddingRight': '10px'})
-    ], style={'display': 'flex', 'flexDirection': 'row', 'gap': '20px', 'alignItems': 'stretch'})
+    ], style={'display': 'flex', 'flexDirection': 'row', 'gap': '20px', 'alignItems': 'stretch'}),
 ])
 
 # Callbacks
@@ -269,7 +275,8 @@ app.layout = html.Div([
      Output('failed-sessions-gauge', 'figure'),
      Output('successful-sessions-gauge', 'figure'),
      Output('top-failed-providers', 'children'),
-     Output('top-successful-providers', 'children')],
+     Output('top-successful-providers', 'children'),
+     Output('charging-locations-map', 'srcDoc')],
     [Input('upload-json', 'contents'),
      Input('load-demo-data', 'n_clicks'),
      Input('date-picker-range', 'start_date'),
@@ -282,12 +289,12 @@ def upload_json(contents, n_clicks, start_date, end_date):
         try:
             data = json.loads(decoded)
         except json.JSONDecodeError:
-            return [], None, {}, {}, [], {}, {}, {}, [], []
+            return [], None, {}, {}, [], {}, {}, {}, [], "", ""
     elif n_clicks > 0:
         with open('FINAL_DEMO_CHARGING_DATA_SMOOTH_CURVES.JSON', 'r') as f:
             data = json.load(f)
     else:
-        return [], None, {}, {}, [], {}, {}, {}, [], []
+        return [], None, {}, {}, [], {}, {}, {}, [], "", ""
 
     sessions = process_data(data)
     
@@ -328,7 +335,10 @@ def upload_json(contents, n_clicks, start_date, end_date):
     top_failed_providers = [html.Li(f"{provider}: {count} failed sessions") for provider, count in session_stats['top_failed_providers']]
     top_successful_providers = [html.Li(f"{provider}: {count} successful sessions") for provider, count in session_stats['top_successful_providers']]
 
-    return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers
+    # Process charging data for map
+    map_html_content = create_map_string(data, start_date, end_date)
+
+    return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers, map_html_content
 
 @app.callback(
     [Output('charge-details-graph', 'figure'),
