@@ -13,9 +13,10 @@ import io
 # Use this tool at your own risk and ensure you handle sensitive data appropriately.
 
 # Initialize Dash app
-app = dash.Dash(__name__)
-app.title = 'Charging Session Dashboard'
-server = app.server
+app = dash.Dash()
+app.title = 'BMW CarData - Charging Session Dashboard'
+app.css.config.serve_locally = True
+app.scripts.config.serve_locally = True
 
 # Set maximum file upload size (e.g., 5MB)
 app.server.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
@@ -121,7 +122,7 @@ def create_folium_map(sessions, selected_session=None):
 
 # Layout
 app.layout = html.Div([
-    html.H1('Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
+    html.H1('BMW CarData - Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
 
     # Disclaimer
     html.Div([
