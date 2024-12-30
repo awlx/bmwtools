@@ -358,7 +358,7 @@ def update_dashboard(selected_session, sessions):
         ))
     avg_gridpower_fig.update_layout(
         title='Average Grid Power Across All Sessions',
-        xaxis_title='Session Progress',
+        xaxis_title='Session Time (minutes)',
         yaxis_title='Grid Power (kW)',
         template='plotly_white',
         showlegend=False
