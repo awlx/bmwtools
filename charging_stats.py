@@ -3,10 +3,9 @@ from dash import dcc, html, Input, Output, State
 import plotly.graph_objs as go
 import json
 import datetime
-import folium
 from folium import Map, Marker
 import base64
-import io
+from successful_failed_sessions import get_session_stats
 
 # DISCLAIMER
 # This application stores all uploaded data in memory for processing.
@@ -166,14 +165,33 @@ app.layout = html.Div([
     html.Div([
         dcc.Graph(
             id='total-energy-gauge',
-            style={'height': '400px', 'width': '60%', 'display': 'inline-block', 'margin': '10px'}
+            style={'height': '300px', 'width': '60%', 'display': 'inline-block', 'margin': '10px'}
         ),
         dcc.Graph(
             id='current-km-gauge',
-            style={'height': '400px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
+            style={'height': '300px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
         )
-    ], style={'marginBottom': '20px', 'textAlign': 'center'}),
+    ], style={'marginBottom': '20px', 'textAlign': 'center', 'clear': 'both'}),
+    
+    # Session Stats Gauges Panel
+    html.Div([
+        dcc.Graph(id='total-sessions-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
+        dcc.Graph(id='successful-sessions-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
+        dcc.Graph(id='failed-sessions-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
+    ], style={'marginBottom': '20px', 'textAlign': 'center', 'clear': 'both'}),
 
+    # Top Providers
+    html.Div([
+        html.Div([
+            html.H4("Top 5 Failed Providers"),
+            html.Ul(id='top-failed-providers', style={'listStyleType': 'none', 'padding': '0'})
+        ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '5%'}),
+        html.Div([
+            html.H4("Top 5 Successful Providers"),
+            html.Ul(id='top-successful-providers', style={'listStyleType': 'none', 'padding': '0'})
+        ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top'})
+    ], style={'textAlign': 'center', 'marginBottom': '20px', 'clear': 'both'}),
+   
     # Overview Scatterplots
     html.Div([
         dcc.Graph(
@@ -190,11 +208,6 @@ app.layout = html.Div([
         )
     ], style={'marginBottom': '20px'}),
 
-    # Plaintext output
-    html.Div([
-        html.H3(id='session-info', style={'textAlign': 'center', 'color': '#1f77b4', 'marginBottom': '20px'})
-    ]),
-
     # Dropdown to select session
     html.Div([
         html.Label('Select Charging Session by Time and Location:', style={'fontWeight': 'bold', 'color': '#1f77b4'}),
@@ -205,6 +218,11 @@ app.layout = html.Div([
             style={'border': '2px solid #1f77b4', 'borderRadius': '5px'}
         )
     ], style={'width': '50%', 'margin': 'auto', 'marginBottom': '20px'}),
+
+    # Plaintext output
+    html.Div([
+        html.H3(id='session-info', style={'textAlign': 'center', 'color': '#1f77b4', 'marginBottom': '20px'})
+    ]),
 
     # Dashboard layout with compact and modern design
     html.Div([
@@ -234,7 +252,12 @@ app.layout = html.Div([
      Output('session-dropdown', 'value'),
      Output('total-energy-gauge', 'figure'),
      Output('current-km-gauge', 'figure'),
-     Output('session-data', 'data')],
+     Output('session-data', 'data'),
+     Output('total-sessions-gauge', 'figure'),
+     Output('failed-sessions-gauge', 'figure'),
+     Output('successful-sessions-gauge', 'figure'),
+     Output('top-failed-providers', 'children'),
+     Output('top-successful-providers', 'children')],
     [Input('upload-json', 'contents'),
      Input('load-demo-data', 'n_clicks')]
 )
@@ -245,12 +268,12 @@ def upload_json(contents, n_clicks):
         try:
             data = json.loads(decoded)
         except json.JSONDecodeError:
-            return [], None, {}, {}, []
+            return [], None, {}, {}, [], {}, {}, {}, [], []
     elif n_clicks > 0:
         with open('FINAL_DEMO_CHARGING_DATA_SMOOTH_CURVES.JSON', 'r') as f:
             data = json.load(f)
     else:
-        return [], None, {}, {}, []
+        return [], None, {}, {}, [], {}, {}, {}, [], []
 
     sessions = process_data(data)
     options = [
@@ -271,7 +294,20 @@ def upload_json(contents, n_clicks):
     current_km_fig.add_trace(create_gauge_trace(current_km, "Current km", "orange", [0, 1], range_max=current_km + 500))
     current_km_fig.update_layout(height=400, width=300, template='plotly_white')
 
-    return options, 0, total_energy_fig, current_km_fig, sessions
+    session_stats = get_session_stats(data=data)
+    total_sessions_fig = go.Figure()
+    failed_sessions_fig = go.Figure()
+    successful_sessions_fig = go.Figure()
+    total_sessions_fig.add_trace(create_gauge_trace(session_stats['total_sessions'], "Total Sessions", "blue", [0, 1]))
+    failed_sessions_fig.add_trace(create_gauge_trace(session_stats['total_failed_sessions'], "Failed Sessions", "red", [0, 1]))
+    successful_sessions_fig.add_trace(create_gauge_trace(session_stats['total_successful_sessions'], "Successful Sessions", "green", [0, 1]))
+    total_sessions_fig.update_layout(height=300, width=300, template='plotly_white')
+    failed_sessions_fig.update_layout(height=300, width=300, template='plotly_white')
+    successful_sessions_fig.update_layout(height=300, width=300, template='plotly_white')
+    top_failed_providers = [html.Li(f"{provider}: {count} failed sessions") for provider, count in session_stats['top_failed_providers']]
+    top_successful_providers = [html.Li(f"{provider}: {count} successful sessions") for provider, count in session_stats['top_successful_providers']]
+
+    return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers
 
 @app.callback(
     [Output('charge-details-graph', 'figure'),
