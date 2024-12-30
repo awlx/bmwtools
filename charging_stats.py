@@ -13,10 +13,8 @@ import io
 # Use this tool at your own risk and ensure you handle sensitive data appropriately.
 
 # Initialize Dash app
-app = dash.Dash()
-app.title = 'BMW CarData - Charging Session Dashboard'
-app.css.config.serve_locally = True
-app.scripts.config.serve_locally = True
+app = dash.Dash(__name__)
+app.title = 'Charging Session Dashboard'
 server = app.server
 
 # Set maximum file upload size (e.g., 5MB)
@@ -47,6 +45,7 @@ def process_data(data):
                 'soc_start': soc_start,
                 'soc_end': soc_end,
                 'energy_added': energy_added,
+                'energyIncreaseHvbKwh': session.get('energyIncreaseHvbKwh', 0),
                 'cost': cost,
                 'efficiency': efficiency,
                 'location': location,
@@ -59,6 +58,23 @@ def process_data(data):
         except KeyError:
             continue
     return sessions
+
+# Function to calculate estimated battery capacity (SoH)
+def calculate_estimated_battery_capacity(sessions):
+    estimated_battery_capacity = []
+    for session in sessions:
+        if session['energyIncreaseHvbKwh'] >= 15:
+            soc_change = session['soc_end'] - session['soc_start']
+            if soc_change != 0:
+                estimated_capacity = (session['energyIncreaseHvbKwh'] * 100) / soc_change
+            else:
+                estimated_capacity = 0
+            estimated_battery_capacity.append({
+                'date': session['start_time'],
+                'estimated_battery_capacity': estimated_capacity,
+                'soc_change': soc_change
+            })
+    return estimated_battery_capacity
 
 # Function to create a gauge trace
 def create_gauge_trace(value, title, color, domain_x, domain_y=[0, 1], range_max=None):
@@ -105,7 +121,7 @@ def create_folium_map(sessions, selected_session=None):
 
 # Layout
 app.layout = html.Div([
-    html.H1('BMW CarData - Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
+    html.H1('Charging Session Dashboard', style={'textAlign': 'center', 'color': '#1f77b4'}),
 
     # Disclaimer
     html.Div([
@@ -165,6 +181,10 @@ app.layout = html.Div([
         ),
         dcc.Graph(
             id='average-gridpower-scatterplot',
+            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'}
+        ),
+        dcc.Graph(
+            id='estimated-battery-capacity-scatterplot',
             style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'}
         )
     ], style={'marginBottom': '20px'}),
@@ -236,8 +256,8 @@ def upload_json(contents, n_clicks):
         {'label': f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {s['location']}", 'value': i}
         for i, s in enumerate(sessions)
     ]
-    total_energy_dc = sum(s['energy_added'] for s in sessions if s['avg_power'] >= 12)
-    total_energy_ac = sum(s['energy_added'] for s in sessions if s['avg_power'] < 12)
+    total_energy_dc = sum(s['energyIncreaseHvbKwh'] for s in sessions if s['avg_power'] >= 12)
+    total_energy_ac = sum(s['energyIncreaseHvbKwh'] for s in sessions if s['avg_power'] < 12)
 
     total_energy_fig = go.Figure()
     total_energy_fig.add_trace(create_gauge_trace(total_energy_dc, "Total DC Energy (kWh)", "blue", [0, 0.28], range_max=total_energy_dc + total_energy_ac + 10))
@@ -259,13 +279,14 @@ def upload_json(contents, n_clicks):
      Output('grid-power-graph', 'figure'),
      Output('range-map', 'srcDoc'),
      Output('overview-scatterplot', 'figure'),
-     Output('average-gridpower-scatterplot', 'figure')],
+     Output('average-gridpower-scatterplot', 'figure'),
+     Output('estimated-battery-capacity-scatterplot', 'figure')],
     [Input('session-dropdown', 'value'),
      State('session-data', 'data')]
 )
 def update_dashboard(selected_session, sessions):
     if selected_session is None or not sessions:
-        return {}, "", {}, {}, "", {}, {}
+        return {}, "", {}, {}, "", {}, {}, {}
 
     # Convert start_time and end_time back to datetime objects
     for session in sessions:
@@ -286,14 +307,14 @@ def update_dashboard(selected_session, sessions):
     )
 
     # Session info text
-    session_info = f"Energy Added: {session['energy_added']} kWh, Cost: €{session['cost']}, Efficiency: {session['efficiency']:.2%}, Location: {session['location']}"
+    session_info = f"Energy Added: {session['energyIncreaseHvbKwh']} kWh, Cost: €{session['cost']}, Efficiency: {session['efficiency']:.2%}, Location: {session['location']}"
 
     # Combined gauges
     combined_gauges = go.Figure()
     combined_gauges.add_trace(create_gauge_trace(session['avg_power'], "Average Grid Power (kW)", "darkblue", [0, 0.45], [0.6, 1], max([s['avg_power'] for s in sessions]) + 10))
     combined_gauges.add_trace(create_gauge_trace(session['cost'], "Cost (€)", "green", [0.55, 1], [0.6, 1], max([s['cost'] for s in sessions]) + 10))
     combined_gauges.add_trace(create_gauge_trace(session['efficiency'] * 100, "Efficiency (%)", "orange", [0, 0.45], [0.2, 0.6], 100))
-    combined_gauges.add_trace(create_gauge_trace(session['energy_added'], "Energy Added (kWh)", "purple", [0.55, 1], [0.2, 0.6], max([s['energy_added'] for s in sessions]) + 10))
+    combined_gauges.add_trace(create_gauge_trace(session['energyIncreaseHvbKwh'], "Energy Added (kWh)", "purple", [0.55, 1], [0.2, 0.6], max([s['energyIncreaseHvbKwh'] for s in sessions]) + 10))
     combined_gauges.update_layout(template='plotly_white', height=600)
 
     # Grid Power over Time graph
@@ -312,17 +333,18 @@ def update_dashboard(selected_session, sessions):
     for s in sessions:
         overview_fig.add_trace(go.Scatter(
             x=[s['start_time']],
-            y=[s['energy_added']],
+            y=[s['energyIncreaseHvbKwh']],
             mode='markers',
             marker=dict(size=10, color='blue'),
-            name=f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {[s['energy_added']]} kWh - {s['location']}"
+            name=f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {[s['energyIncreaseHvbKwh']]} kWh - {s['location']}"
         ))
     overview_fig.update_layout(
         showlegend=True,
         title='Energy added per charging session',
         yaxis_title='kWh',
         xaxis_title='Date',
-        )
+    )
+
     # Average Grid Power scatterplot
     avg_gridpower_fig = go.Figure()
     for s in sessions:
@@ -335,16 +357,27 @@ def update_dashboard(selected_session, sessions):
         ))
     avg_gridpower_fig.update_layout(
         title='Average Grid Power Across All Sessions',
-        xaxis_title='Session Time',
+        xaxis_title='Session Progress',
         yaxis_title='Grid Power (kW)',
         template='plotly_white',
         showlegend=False
     )
 
+    # Estimated Battery Capacity scatterplot
+    estimated_battery_capacity_data = calculate_estimated_battery_capacity(sessions)
+    estimated_battery_capacity_fig = create_scatter_plot(
+        x=[data['date'] for data in estimated_battery_capacity_data],
+        y=[data['estimated_battery_capacity'] for data in estimated_battery_capacity_data],
+        title='Estimated Battery Capacity (SoH) Over Time - Guesstimated',
+        xaxis_title='Date',
+        yaxis_title='Estimated Battery Capacity (kWh)',
+        color='red'
+    )
+
     # Generate Folium map
     map_html_content = create_folium_map(sessions, session)
 
-    return charge_details_fig, session_info, combined_gauges, grid_power_fig, map_html_content, overview_fig, avg_gridpower_fig
+    return charge_details_fig, session_info, combined_gauges, grid_power_fig, map_html_content, overview_fig, avg_gridpower_fig, estimated_battery_capacity_fig
 
 # Run the app
 if __name__ == '__main__':
