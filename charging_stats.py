@@ -77,12 +77,24 @@ def calculate_estimated_battery_capacity(sessions):
             })
     return estimated_battery_capacity
 
+# Function to calculate overall efficiency and power consumption
+def calculate_overall_stats(sessions):
+    total_energy_added = sum(s['energy_added_hvb'] for s in sessions)
+    total_energy_from_grid = sum(s['energy_from_grid'] for s in sessions)
+    total_distance = max(s['mileage'] for s in sessions if s['mileage'] > 0)
+    
+    overall_efficiency = (total_energy_added / total_energy_from_grid) if total_energy_from_grid else 0
+    power_consumption_per_100km = (total_energy_from_grid / total_distance) * 100 if total_distance else 0
+    power_consumption_per_100km_without_grid_losses = (total_energy_added / total_distance) * 100 if total_distance else 0
+    
+    return overall_efficiency, power_consumption_per_100km, power_consumption_per_100km_without_grid_losses
+
 # Function to create a gauge trace
 def create_gauge_trace(value, title, color, domain_x, domain_y=[0, 1], range_max=None):
     return go.Indicator(
         mode="gauge+number",
         value=value,
-        title={'text': title},
+        title={'text': title, 'font': {'size': 14}},  # Adjust the font size here
         domain={'x': domain_x, 'y': domain_y},
         gauge={'axis': {'range': [0, range_max] if range_max else [None, None]}, 'bar': {'color': color}}
     )
@@ -185,6 +197,13 @@ app.layout = html.Div([
             style={'height': '300px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
         )
     ], style={'marginBottom': '20px', 'textAlign': 'center', 'clear': 'both'}),
+
+    # Overall Efficiency and Power Consumption Gauges Panel
+    html.Div([
+        dcc.Graph(id='overall-efficiency-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
+        dcc.Graph(id='power-consumption-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
+        dcc.Graph(id='power-consumption-without-grid-losses-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'})
+    ], style={'marginBottom': '20px', 'textAlign': 'center', 'clear': 'both'}),
     
     # Session Stats Gauges Panel
     html.Div([
@@ -262,6 +281,7 @@ app.layout = html.Div([
             dcc.Graph(id='grid-power-graph', style={'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px'})
         ], style={'flex': '1', 'paddingRight': '10px'})
     ], style={'display': 'flex', 'flexDirection': 'row', 'gap': '20px', 'alignItems': 'stretch'}),
+
 ])
 
 # Callbacks
@@ -276,7 +296,10 @@ app.layout = html.Div([
      Output('successful-sessions-gauge', 'figure'),
      Output('top-failed-providers', 'children'),
      Output('top-successful-providers', 'children'),
-     Output('charging-locations-map', 'srcDoc')],
+     Output('charging-locations-map', 'srcDoc'),
+     Output('overall-efficiency-gauge', 'figure'),
+     Output('power-consumption-gauge', 'figure'),
+     Output('power-consumption-without-grid-losses-gauge', 'figure')],
     [Input('upload-json', 'contents'),
      Input('load-demo-data', 'n_clicks'),
      Input('date-picker-range', 'start_date'),
@@ -289,12 +312,12 @@ def upload_json(contents, n_clicks, start_date, end_date):
         try:
             data = json.loads(decoded)
         except json.JSONDecodeError:
-            return [], None, {}, {}, [], {}, {}, {}, [], "", ""
+            return [], None, {}, {}, [], {}, {}, {}, [], "", "", {}, {}, {}
     elif n_clicks > 0:
         with open('FINAL_DEMO_CHARGING_DATA_SMOOTH_CURVES.JSON', 'r') as f:
             data = json.load(f)
     else:
-        return [], None, {}, {}, [], {}, {}, {}, [], "", ""
+        return [], None, {}, {}, [], {}, {}, {}, [], "", "", {}, {}, {}
 
     sessions = process_data(data)
     
@@ -338,7 +361,21 @@ def upload_json(contents, n_clicks, start_date, end_date):
     # Process charging data for map
     map_html_content = create_map_string(data, start_date, end_date)
 
-    return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers, map_html_content
+    overall_efficiency, power_consumption_per_100km, power_consumption_per_100km_without_grid_losses = calculate_overall_stats(sessions)
+    
+    overall_efficiency_fig = go.Figure()
+    overall_efficiency_fig.add_trace(create_gauge_trace(overall_efficiency * 100, "Overall Efficiency (%)", "blue", [0, 1], range_max=100))
+    overall_efficiency_fig.update_layout(height=300, width=300, template='plotly_white')
+    
+    power_consumption_fig = go.Figure()
+    power_consumption_fig.add_trace(create_gauge_trace(power_consumption_per_100km, "Power Consumption (kWh/100km)", "green", [0, 1], range_max=power_consumption_per_100km))
+    power_consumption_fig.update_layout(height=300, width=300, template='plotly_white')
+    
+    power_consumption_without_grid_losses_fig = go.Figure()
+    power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_100km_without_grid_losses, "Power Consumption without Grid Losses (kWh/100km)", "purple", [0, 1], range_max=power_consumption_per_100km))
+    power_consumption_without_grid_losses_fig.update_layout(height=300, width=300, template='plotly_white')
+    
+    return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers, map_html_content, overall_efficiency_fig, power_consumption_fig, power_consumption_without_grid_losses_fig
 
 @app.callback(
     [Output('charge-details-graph', 'figure'),
