@@ -160,7 +160,7 @@ app.layout = html.Div([
                 'borderRadius': '5px',
                 'textAlign': 'center',
                 'margin': 'auto',
-                'marginBottom': '20px',
+                'marginBottom': '10px',  # Reduced margin
             },
             multiple=False
         )
@@ -168,7 +168,7 @@ app.layout = html.Div([
 
     # Button to load demo data
     html.Div([
-        html.Button('Load Demo Data', id='load-demo-data', n_clicks=0, style={'marginBottom': '20px'})
+        html.Button('Load Demo Data', id='load-demo-data', n_clicks=0, style={'marginBottom': '10px'})  # Reduced margin
     ], style={'textAlign': 'center'}),
 
     # Store component to hold session data
@@ -182,9 +182,9 @@ app.layout = html.Div([
             start_date_placeholder_text='Start Date',
             end_date_placeholder_text='End Date',
             display_format='YYYY-MM-DD',
-            style={'border': '2px solid #1f77b4', 'borderRadius': '5px', 'marginBottom': '20px'}
+            style={'border': '2px solid #1f77b4', 'borderRadius': '5px', 'marginBottom': '10px'}  # Reduced margin
         )
-    ], style={'width': '50%', 'margin': 'auto', 'marginBottom': '20px'}),
+    ], style={'width': '50%', 'margin': 'auto', 'marginBottom': '10px'}),  # Reduced margin
 
     # Total Energy Gauges Panel
     html.Div([
@@ -196,21 +196,21 @@ app.layout = html.Div([
             id='current-km-gauge',
             style={'height': '300px', 'width': '30%', 'display': 'inline-block', 'margin': '10px'}
         )
-    ], style={'marginBottom': '20px', 'textAlign': 'center', 'clear': 'both'}),
+    ], style={'marginBottom': '10px', 'textAlign': 'center', 'clear': 'both'}),  # Reduced margin
 
     # Overall Efficiency and Power Consumption Gauges Panel
     html.Div([
         dcc.Graph(id='overall-efficiency-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
         dcc.Graph(id='power-consumption-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
         dcc.Graph(id='power-consumption-without-grid-losses-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'})
-    ], style={'marginBottom': '20px', 'textAlign': 'center', 'clear': 'both'}),
+    ], style={'marginBottom': '10px', 'textAlign': 'center', 'clear': 'both'}),  # Reduced margin
     
     # Session Stats Gauges Panel
     html.Div([
         dcc.Graph(id='total-sessions-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
         dcc.Graph(id='successful-sessions-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
         dcc.Graph(id='failed-sessions-gauge', style={'height': '300px', 'width': '30%', 'display': 'inline-block'}),
-    ], style={'marginBottom': '20px', 'textAlign': 'center', 'clear': 'both'}),
+    ], style={'marginBottom': '10px', 'textAlign': 'center', 'clear': 'both'}),  # Reduced margin
 
     # Top Providers
     html.Div([
@@ -222,28 +222,28 @@ app.layout = html.Div([
             html.H4("Top 5 Failed Providers"),
             html.Ul(id='top-failed-providers', style={'listStyleType': 'none', 'padding': '0'})
         ], style={'width': '45%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '5%'}),
-    ], style={'textAlign': 'center', 'marginBottom': '20px', 'clear': 'both'}),
+    ], style={'textAlign': 'center', 'marginBottom': '10px', 'clear': 'both'}),  # Reduced margin
    
     # Overview Scatterplots
     html.Div([
         dcc.Graph(
             id='overview-scatterplot',
-            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'}
+            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'}  # Reduced margin
         ),
         dcc.Graph(
             id='average-gridpower-scatterplot',
-            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'}
+            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'}  # Reduced margin
         ),
         dcc.Graph(
             id='estimated-battery-capacity-scatterplot',
-            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'}
+            style={'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'}  # Reduced margin
         )
-    ], style={'marginBottom': '20px'}),
+    ], style={'marginBottom': '10px'}),  # Reduced margin
 
     # Second map for charging locations
     html.Div([
-        html.Iframe(id='charging-locations-map', style={'width': '100%', 'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '20px'})
-    ], style={'marginBottom': '20px'}),
+        html.Iframe(id='charging-locations-map', style={'width': '100%', 'height': '400px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'})  # Reduced margin
+    ], style={'marginBottom': '10px'}),  # Reduced margin
 
     # Dropdown to select session
     html.Div([
@@ -254,31 +254,30 @@ app.layout = html.Div([
             value=None,
             style={'border': '2px solid #1f77b4', 'borderRadius': '5px'}
         )
-    ], style={'width': '50%', 'margin': 'auto', 'marginBottom': '20px'}),
+    ], style={'width': '50%', 'margin': 'auto', 'marginBottom': '10px'}),  # Reduced margin
 
     # Plaintext output
     html.Div([
-        html.H3(id='session-info', style={'textAlign': 'center', 'color': '#1f77b4', 'marginBottom': '20px'})
+        html.H3(id='session-info', style={'textAlign': 'center', 'color': '#1f77b4', 'marginBottom': '10px'})  # Reduced margin
     ]),
 
     # Dashboard layout with compact and modern design
     html.Div([
         html.Div([
             html.Div([
-                html.Iframe(id='range-map', style={'width': '100%', 'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'})
+                html.Iframe(id='range-map', style={'width': '100%', 'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'})  # Reduced margin
             ]),
             html.Div([
                 html.Div([
                     dcc.Graph(
                         id='combined-gauges',
-                        style={'height': '600px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'}
-                    )
+                        style={'height': '600px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'})  # Reduced margin
                 ])
             ])
         ], style={'flex': '1', 'paddingLeft': '10px'}),
         html.Div([
-            dcc.Graph(id='charge-details-graph', style={'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'}),
-            dcc.Graph(id='grid-power-graph', style={'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px'})
+            dcc.Graph(id='charge-details-graph', style={'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'}),  # Reduced margin
+            dcc.Graph(id='grid-power-graph', style={'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px'})  # Reduced margin
         ], style={'flex': '1', 'paddingRight': '10px'})
     ], style={'display': 'flex', 'flexDirection': 'row', 'gap': '20px', 'alignItems': 'stretch'}),
 
@@ -368,11 +367,11 @@ def upload_json(contents, n_clicks, start_date, end_date):
     overall_efficiency_fig.update_layout(height=300, width=300, template='plotly_white')
     
     power_consumption_fig = go.Figure()
-    power_consumption_fig.add_trace(create_gauge_trace(power_consumption_per_100km, "Power Consumption (kWh/100km)", "green", [0, 1], range_max=power_consumption_per_100km))
+    power_consumption_fig.add_trace(create_gauge_trace(power_consumption_per_100km, "Avg Power Consumption (kWh/100km)", "green", [0, 1], range_max=power_consumption_per_100km))
     power_consumption_fig.update_layout(height=300, width=300, template='plotly_white')
     
     power_consumption_without_grid_losses_fig = go.Figure()
-    power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_100km_without_grid_losses, "Power Consumption without Grid Losses (kWh/100km)", "purple", [0, 1], range_max=power_consumption_per_100km))
+    power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_100km_without_grid_losses, "Avg Power Consumption without Grid Losses (kWh/100km)", "purple", [0, 1], range_max=power_consumption_per_100km))
     power_consumption_without_grid_losses_fig.update_layout(height=300, width=300, template='plotly_white')
     
     return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers, map_html_content, overall_efficiency_fig, power_consumption_fig, power_consumption_without_grid_losses_fig
