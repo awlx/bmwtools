@@ -416,7 +416,7 @@ def upload_json(contents, n_clicks, start_date, end_date, toggle_units):
         power_consumption_fig.update_layout(height=300, width=300, template='plotly_white')
 
         power_consumption_without_grid_losses_fig = go.Figure()
-        power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_mile_without_grid_losses, "Avg Consumption w/o Grid Losses (miles/kWh)", "purple", [0, 1], range_max=power_consumption_per_mile))
+        power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_mile_without_grid_losses, "Avg Consumption w/o Losses (miles/kWh)", "purple", [0, 1], range_max=power_consumption_per_mile))
         power_consumption_without_grid_losses_fig.update_layout(height=300, width=300, template='plotly_white')
     else:
         overall_efficiency, power_consumption_per_100km, power_consumption_per_100km_without_grid_losses = calculate_overall_stats(sessions)
@@ -430,7 +430,7 @@ def upload_json(contents, n_clicks, start_date, end_date, toggle_units):
         power_consumption_fig.update_layout(height=300, width=300, template='plotly_white')
         
         power_consumption_without_grid_losses_fig = go.Figure()
-        power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_100km_without_grid_losses, "Avg Consumption w/o Grid Losses (kWh/100km)", "purple", [0, 1], range_max=power_consumption_per_100km))
+        power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_100km_without_grid_losses, "Avg Consumption w/o Losses (kWh/100km)", "purple", [0, 1], range_max=power_consumption_per_100km))
         power_consumption_without_grid_losses_fig.update_layout(height=300, width=300, template='plotly_white')
 
     return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers, map_html_content, overall_efficiency_fig, power_consumption_fig, power_consumption_without_grid_losses_fig
