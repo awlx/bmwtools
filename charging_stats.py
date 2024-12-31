@@ -18,6 +18,10 @@ app.title = 'BMW CarData - Charging Session Dashboard'
 app.css.config.serve_locally = True
 app.scripts.config.serve_locally = True
 
+# Conversion constants
+KM_TO_MILES = 0.621371
+KWH_PER_100KM_TO_MILES_PER_KWH = 1 / KM_TO_MILES / 100
+
 # Set maximum file upload size (e.g., 5MB)
 app.server.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
@@ -185,7 +189,12 @@ app.layout = html.Div([
             style={'border': '2px solid #1f77b4', 'borderRadius': '5px', 'marginBottom': '10px'}  # Reduced margin
         )
     ], style={'width': '50%', 'margin': 'auto', 'marginBottom': '10px'}),  # Reduced margin
-
+  
+    # Miles / kilometers toggle button
+    html.Div([
+        html.Button('Toggle Units (km/miles)', id='toggle-units', n_clicks=0, style={'marginBottom': '10px'})  # New button
+    ], style={'textAlign': 'center'}),
+    
     # Total Energy Gauges Panel
     html.Div([
         dcc.Graph(
@@ -302,9 +311,10 @@ app.layout = html.Div([
     [Input('upload-json', 'contents'),
      Input('load-demo-data', 'n_clicks'),
      Input('date-picker-range', 'start_date'),
-     Input('date-picker-range', 'end_date')]
+     Input('date-picker-range', 'end_date'),
+     Input('toggle-units', 'n_clicks')]  # New input
 )
-def upload_json(contents, n_clicks, start_date, end_date):
+def upload_json(contents, n_clicks, start_date, end_date, toggle_units):
     if contents:
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
@@ -371,9 +381,58 @@ def upload_json(contents, n_clicks, start_date, end_date):
     power_consumption_fig.update_layout(height=300, width=300, template='plotly_white')
     
     power_consumption_without_grid_losses_fig = go.Figure()
-    power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_100km_without_grid_losses, "Avg Power Consumption without Grid Losses (kWh/100km)", "purple", [0, 1], range_max=power_consumption_per_100km))
+    power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_100km_without_grid_losses, "Avg Consumption w/o Grid Losses (kWh/100km)", "purple", [0, 1], range_max=power_consumption_per_100km))
     power_consumption_without_grid_losses_fig.update_layout(height=300, width=300, template='plotly_white')
     
+    # Determine if units should be in km or miles
+    use_miles = toggle_units % 2 == 1
+
+    if use_miles:
+        total_energy_dc = sum(s['energy_added_hvb'] for s in sessions if s['avg_power'] >= 12)
+        total_energy_ac = sum(s['energy_added_hvb'] for s in sessions if s['avg_power'] < 12)
+
+        total_energy_fig = go.Figure()
+        total_energy_fig.add_trace(create_gauge_trace(total_energy_dc, "Total DC Energy (kWh)", "blue", [0, 0.28], range_max=total_energy_dc + total_energy_ac + 10))
+        total_energy_fig.add_trace(create_gauge_trace(total_energy_ac, "Total AC Energy (kWh)", "green", [0.36, 0.64], range_max=total_energy_dc + total_energy_ac + 10))
+        total_energy_fig.add_trace(create_gauge_trace(total_energy_dc + total_energy_ac, "Total Energy (AC + DC)", "purple", [0.72, 1], range_max=total_energy_dc + total_energy_ac + 20))
+        total_energy_fig.update_layout(height=400, width=900, template='plotly_white')
+
+        current_km = max(s['mileage'] for s in sessions if s['mileage'] > 0)
+        current_miles = current_km * KM_TO_MILES
+        current_km_fig = go.Figure()
+        current_km_fig.add_trace(create_gauge_trace(current_miles, "Current miles", "orange", [0, 1], range_max=current_miles + 500))
+        current_km_fig.update_layout(height=400, width=300, template='plotly_white')
+
+        overall_efficiency, power_consumption_per_100km, power_consumption_per_100km_without_grid_losses = calculate_overall_stats(sessions)
+        power_consumption_per_mile = (100 / power_consumption_per_100km) * KM_TO_MILES if power_consumption_per_100km else 0
+        power_consumption_per_mile_without_grid_losses = (100 / power_consumption_per_100km_without_grid_losses) * KM_TO_MILES if power_consumption_per_100km_without_grid_losses else 0
+
+        overall_efficiency_fig = go.Figure()
+        overall_efficiency_fig.add_trace(create_gauge_trace(overall_efficiency * 100, "Overall Efficiency (%)", "blue", [0, 1], range_max=100))
+        overall_efficiency_fig.update_layout(height=300, width=300, template='plotly_white')
+
+        power_consumption_fig = go.Figure()
+        power_consumption_fig.add_trace(create_gauge_trace(power_consumption_per_mile, "Avg Power Consumption (miles/kWh)", "green", [0, 1], range_max=power_consumption_per_mile))
+        power_consumption_fig.update_layout(height=300, width=300, template='plotly_white')
+
+        power_consumption_without_grid_losses_fig = go.Figure()
+        power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_mile_without_grid_losses, "Avg Consumption w/o Grid Losses (miles/kWh)", "purple", [0, 1], range_max=power_consumption_per_mile))
+        power_consumption_without_grid_losses_fig.update_layout(height=300, width=300, template='plotly_white')
+    else:
+        overall_efficiency, power_consumption_per_100km, power_consumption_per_100km_without_grid_losses = calculate_overall_stats(sessions)
+        
+        overall_efficiency_fig = go.Figure()
+        overall_efficiency_fig.add_trace(create_gauge_trace(overall_efficiency * 100, "Overall Efficiency (%)", "blue", [0, 1], range_max=100))
+        overall_efficiency_fig.update_layout(height=300, width=300, template='plotly_white')
+        
+        power_consumption_fig = go.Figure()
+        power_consumption_fig.add_trace(create_gauge_trace(power_consumption_per_100km, "Avg Power Consumption (kWh/100km)", "green", [0, 1], range_max=power_consumption_per_100km))
+        power_consumption_fig.update_layout(height=300, width=300, template='plotly_white')
+        
+        power_consumption_without_grid_losses_fig = go.Figure()
+        power_consumption_without_grid_losses_fig.add_trace(create_gauge_trace(power_consumption_per_100km_without_grid_losses, "Avg Consumption w/o Grid Losses (kWh/100km)", "purple", [0, 1], range_max=power_consumption_per_100km))
+        power_consumption_without_grid_losses_fig.update_layout(height=300, width=300, template='plotly_white')
+
     return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers, map_html_content, overall_efficiency_fig, power_consumption_fig, power_consumption_without_grid_losses_fig
 
 @app.callback(
