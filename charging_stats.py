@@ -85,7 +85,10 @@ def calculate_estimated_battery_capacity(sessions):
 def calculate_overall_stats(sessions):
     total_energy_added = sum(s['energy_added_hvb'] for s in sessions)
     total_energy_from_grid = sum(s['energy_from_grid'] for s in sessions)
-    total_distance = max(s['mileage'] for s in sessions if s['mileage'] > 0)
+    if sessions:
+        total_distance = max(s['mileage'] for s in sessions) - min(s['mileage'] for s in sessions)
+    else:
+        total_distance = max(s['mileage'] for s in sessions) if sessions else 0
     
     overall_efficiency = (total_energy_added / total_energy_from_grid) if total_energy_from_grid else 0
     power_consumption_per_100km = (total_energy_from_grid / total_distance) * 100 if total_distance else 0
@@ -349,9 +352,13 @@ def upload_json(contents, n_clicks, start_date, end_date, toggle_units):
     total_energy_fig.add_trace(create_gauge_trace(total_energy_dc + total_energy_ac, "Total Energy (AC + DC)", "purple", [0.72, 1], range_max=total_energy_dc + total_energy_ac + 20))
     total_energy_fig.update_layout(height=400, width=900, template='plotly_white')
 
-    current_km = max(s['mileage'] for s in sessions if s['mileage'] > 0)
+    if start_date and end_date:
+        current_km = max(s['mileage'] for s in sessions) - min(s['mileage'] for s in sessions) if sessions else 0
+    else:
+        current_km = max(s['mileage'] for s in sessions) if sessions else 0
+
     current_km_fig = go.Figure()
-    current_km_fig.add_trace(create_gauge_trace(current_km, "Current km", "orange", [0, 1], range_max=current_km + 500))
+    current_km_fig.add_trace(create_gauge_trace(current_km, "Driven km", "orange", [0, 1], range_max=current_km + 500))
     current_km_fig.update_layout(height=400, width=300, template='plotly_white')
 
     session_stats = get_session_stats(data=data, start_date=start_date, end_date=end_date)
@@ -400,7 +407,7 @@ def upload_json(contents, n_clicks, start_date, end_date, toggle_units):
         current_km = max(s['mileage'] for s in sessions if s['mileage'] > 0)
         current_miles = current_km * KM_TO_MILES
         current_km_fig = go.Figure()
-        current_km_fig.add_trace(create_gauge_trace(current_miles, "Current miles", "orange", [0, 1], range_max=current_miles + 500))
+        current_km_fig.add_trace(create_gauge_trace(current_miles, "Current miles", "orange", [0, 1], range_max=current_miles))
         current_km_fig.update_layout(height=400, width=300, template='plotly_white')
 
         overall_efficiency, power_consumption_per_100km, power_consumption_per_100km_without_grid_losses = calculate_overall_stats(sessions)
