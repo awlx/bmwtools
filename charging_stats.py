@@ -5,6 +5,7 @@ import json
 import datetime
 from folium import Map, Marker
 import base64
+import pandas as pd  # Add this import
 from successful_failed_sessions import get_session_stats
 from draw_chargers import load_data, process_charging_data, create_map_string
 
@@ -106,8 +107,8 @@ def create_gauge_trace(value, title, color, domain_x, domain_y=[0, 1], range_max
         gauge={'axis': {'range': [0, range_max] if range_max else [None, None]}, 'bar': {'color': color}}
     )
 
-# Function to create a scatter plot
-def create_scatter_plot(x, y, title, xaxis_title, yaxis_title, color='blue', mode='markers', size=10):
+# Function to create a scatter plot with optional trend line
+def create_scatter_plot(x, y, title, xaxis_title, yaxis_title, color='blue', mode='markers', size=10, trendline=False):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=x,
@@ -116,6 +117,15 @@ def create_scatter_plot(x, y, title, xaxis_title, yaxis_title, color='blue', mod
         marker=dict(size=size, color=color),
         name=title
     ))
+    if trendline:
+        window_size = max(1, min(20, len(y)))  # Ensure window size is at least 1
+        fig.add_trace(go.Scatter(
+            x=x,
+            y=pd.Series(y).rolling(window=window_size, min_periods=1).mean(),  # Using rolling mean for trendline
+            mode='lines',
+            line=dict(color='red'),
+            name='Trend'
+        ))
     fig.update_layout(
         title=title,
         xaxis_title=xaxis_title,
@@ -540,8 +550,9 @@ def update_dashboard(selected_session, sessions):
         y=[data['estimated_battery_capacity'] for data in estimated_battery_capacity_data],
         title='Estimated Battery Capacity (SoH) Over Time - Guesstimated',
         xaxis_title='Date',
-        yaxis_title='Estimated Battery Capacity (kWh)',
-        color='red'
+        yaxis_title='kWh',
+        color='red',
+        trendline=True  # Add trendline
     )
 
     # Generate Folium map
