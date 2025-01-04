@@ -312,7 +312,14 @@ app.layout = html.Div([
             dcc.Graph(id='grid-power-graph', style={'height': '300px', 'border': '2px solid #1f77b4', 'borderRadius': '10px'})  # Reduced margin
         ], style={'flex': '1', 'paddingRight': '10px'})
     ], style={'display': 'flex', 'flexDirection': 'row', 'gap': '20px', 'alignItems': 'stretch'}),
-
+    
+    # Imprint
+    html.Div([
+        html.P(
+            'Imprint: Freie Netze München e. V. / Parkstraße 28 / 82131 Gauting',
+            style={'textAlign': 'center', 'color': 'black', 'fontWeight': 'bold'}
+        )
+    ]),
 ])
 
 # Callbacks
