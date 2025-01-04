@@ -107,7 +107,7 @@ def create_gauge_trace(value, title, color, domain_x, domain_y=[0, 1], range_max
         gauge={'axis': {'range': [0, range_max] if range_max else [None, None]}, 'bar': {'color': color}}
     )
 
-# Function to create a scatter plot with optional trend line
+# Function to create a scatter plot with optional trend line and labels
 def create_scatter_plot(x, y, title, xaxis_title, yaxis_title, color='blue', mode='markers', size=10, trendline=False):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -125,6 +125,16 @@ def create_scatter_plot(x, y, title, xaxis_title, yaxis_title, color='blue', mod
             mode='lines',
             line=dict(color='red'),
             name='Trend'
+        ))
+    # Add labels to the beginning and end of the graph
+    if x and y:
+        fig.add_trace(go.Scatter(
+            x=[x[0], x[-1]],
+            y=[y[0], y[-1]],
+            mode='text',
+            text=[f"{y[0]:.2f}", f"{y[-1]:.2f}"],
+            textposition='top center',
+            showlegend=False  # Remove legend item for labels
         ))
     fig.update_layout(
         title=title,
