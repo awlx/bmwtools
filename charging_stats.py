@@ -5,6 +5,7 @@ import json
 import datetime
 from folium import Map, Marker
 import base64
+import hashlib
 import pandas as pd  # Add this import
 from successful_failed_sessions import get_session_stats
 from draw_chargers import load_data, process_charging_data, create_map_string
@@ -12,7 +13,21 @@ from draw_chargers import load_data, process_charging_data, create_map_string
 # DISCLAIMER
 # This application stores all uploaded data in memory for processing.
 # Use this tool at your own risk and ensure you handle sensitive data appropriately.
-
+# Function to calculate the sha256sum of this script
+def calculate_sha256(file_path):
+    try:
+        with open(file_path, 'rb') as f:
+            file_content = f.read()
+        return hashlib.sha256(file_content).hexdigest()
+    except Exception as e:
+        return f"Error calculating hash: {e}"
+# Add the SHA256 hash of the script to the disclaimer
+def get_disclaimer_with_hash():
+    script_hash = calculate_sha256(__file__)
+    return ('Disclaimer: This application stores all uploaded data in memory, if you refresh your session is lost.\n' 
+            'CarData contains location data of your charges. Use at your own risk!\n'
+            f"SHA256 of the script: {script_hash} \n" 
+            'You can verify authenticity at https://github.com/awlx/bmwtools/blob/main/charging_stats.py')
 # Initialize Dash app
 app = dash.Dash()
 app.title = 'BMW CarData - Charging Session Dashboard'
@@ -165,9 +180,9 @@ app.layout = html.Div([
 
     # Disclaimer
     html.Div([
-        html.P(
-            'Disclaimer: This application stores all uploaded data in memory, if you refresh your session is lost. CarData contains location data of your charges. Use at your own risk!',
-            style={'textAlign': 'center', 'color': 'red', 'fontWeight': 'bold'}
+        dcc.Markdown(
+            get_disclaimer_with_hash(),
+            style={'textAlign': 'center', 'color': 'red', 'fontWeight': 'bold', "white-space": "pre"}
         )
     ]),
 
