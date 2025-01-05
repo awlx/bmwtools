@@ -585,7 +585,7 @@ def update_dashboard(selected_session, sessions):
         avg_gridpower_fig.add_trace(go.Scatter(
             x=[i for i in range(len(s['grid_power_start']))],
             y=s['grid_power_start'],
-            mode='markers',
+            mode='lines',
             marker=dict(size=6, color=s['grid_power_start'], colorscale='Viridis', showscale=False),
             name=f"Session {s['start_time']}"
         ))
