@@ -59,6 +59,8 @@ def process_data(data):
             avg_power = sum([block.get('averagePowerGridKw', 0) for block in session.get('chargingBlocks', [])]) / max(len(session.get('chargingBlocks', [])), 1)
             grid_power_start = [block.get('averagePowerGridKw', 0) for block in session.get('chargingBlocks', [])]
             mileage = session.get('mileage', 0)
+            session_time_minutes = (end_time - start_time).total_seconds() / 60
+
 
             sessions.append({
                 'start_time': start_time,
@@ -74,7 +76,8 @@ def process_data(data):
                 'longitude': longitude,
                 'avg_power': avg_power,
                 'grid_power_start': grid_power_start,
-                'mileage': mileage
+                'mileage': mileage,
+                'session_time_minutes': session_time_minutes
             })
         except KeyError:
             continue
@@ -318,7 +321,7 @@ app.layout = html.Div([
                 html.Div([
                     dcc.Graph(
                         id='combined-gauges',
-                        style={'height': '600px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'})  # Reduced margin
+                        style={'height': '800px', 'border': '2px solid #1f77b4', 'borderRadius': '10px', 'marginBottom': '10px'})  # Reduced margin
                 ])
             ])
         ], style={'flex': '1', 'paddingLeft': '10px'}),
@@ -523,11 +526,12 @@ def update_dashboard(selected_session, sessions):
 
     # Combined gauges
     combined_gauges = go.Figure()
-    combined_gauges.add_trace(create_gauge_trace(session['avg_power'], "Average Grid Power (kW)", "darkblue", [0, 0.45], [0.6, 1], max([s['avg_power'] for s in sessions]) + 10))
-    combined_gauges.add_trace(create_gauge_trace(session['cost'], "Cost (€)", "green", [0.55, 1], [0.6, 1], max([s['cost'] for s in sessions]) + 10))
+    combined_gauges.add_trace(create_gauge_trace(session['avg_power'], "Average Grid Power (kW)", "darkblue", [0, 0.45], [0.6, 1], max([s['avg_power'] for s in sessions])))
+    combined_gauges.add_trace(create_gauge_trace(session['cost'], "Cost (€)", "green", [0.55, 1], [0.6, 1], max([s['cost'] for s in sessions])))
     combined_gauges.add_trace(create_gauge_trace(session['efficiency'] * 100, "Efficiency (%)", "orange", [0, 0.45], [0.2, 0.6], 100))
-    combined_gauges.add_trace(create_gauge_trace(session['energy_added_hvb'], "Energy Added (kWh)", "purple", [0.55, 1], [0.2, 0.6], max([s['energy_added_hvb'] for s in sessions]) + 10))
-    combined_gauges.update_layout(template='plotly_white', height=600)
+    combined_gauges.add_trace(create_gauge_trace(session['energy_added_hvb'], "Energy Added (kWh)", "purple", [0.55, 1], [0.2, 0.6], max([s['energy_added_hvb'] for s in sessions])))
+    combined_gauges.add_trace(create_gauge_trace(session['session_time_minutes'], "Session Time (minutes)", "red", [0.25, 0.75], [0, 0.2], max([s['session_time_minutes'] for s in sessions])))
+    combined_gauges.update_layout(template='plotly_white', height=800)
 
     # Grid Power over Time graph
     grid_power_fig = create_scatter_plot(
