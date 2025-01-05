@@ -544,6 +544,24 @@ def update_dashboard(selected_session, sessions):
         mode='lines+markers'
     )
 
+    # Check if grid_power_start is not empty
+    if session['grid_power_start']:
+        # Find the peak value and its corresponding time
+        peak_value = max(session['grid_power_start'])
+        peak_index = session['grid_power_start'].index(peak_value)
+        peak_time = session['start_time'] + datetime.timedelta(seconds=peak_index * (session['end_time'] - session['start_time']).total_seconds() / len(session['grid_power_start']))
+
+        # Add a marker for the peak value
+        grid_power_fig.add_trace(go.Scatter(
+            x=[peak_time],
+            y=[peak_value],
+            mode='markers+text',
+            marker=dict(size=12, color='red', symbol='x'),
+            text=[f"Peak: {peak_value:.2f} kW"],
+            textposition='bottom center',
+            name='Peak'
+        ))
+
     # Overview scatterplot
     overview_fig = go.Figure()
     for s in sessions:
