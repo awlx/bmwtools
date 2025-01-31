@@ -1,5 +1,7 @@
 import dash
 from dash import dcc, html
+from flask import session
+import uuid
 from callbacks import register_callbacks
 from utils import get_disclaimer_with_hash
 
@@ -11,6 +13,14 @@ app.scripts.config.serve_locally = True
 
 # Set maximum file upload size (e.g., 5MB)
 app.server.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+app.server.secret_key = str(uuid.uuid4())  # Set a secret key for session management
+
+# Generate a unique session ID for each user session
+@app.server.before_request
+def make_session_permanent():
+    session.permanent = True
+    if 'session_id' not in session:
+        session['session_id'] = str(uuid.uuid4())
 
 # Layout
 app.layout = html.Div([
