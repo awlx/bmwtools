@@ -73,29 +73,45 @@ def process_sessions(data, start_date=None, end_date=None):
                     total_successful_sessions += 1
                     successful_providers_count[provider_name] += 1
 
-def get_session_stats(data=None, file_path=None, start_date=None, end_date=None):
-    global failed_providers_count, successful_providers_count, total_failed_sessions, total_successful_sessions
-    # Reset global variables
-    failed_providers_count = defaultdict(int)
-    successful_providers_count = defaultdict(int)
+def get_session_stats(data, start_date=None, end_date=None):
+    total_sessions = 0
     total_failed_sessions = 0
     total_successful_sessions = 0
-    original_provider_names.clear()
-    known_providers.clear()
+    top_failed_providers = {}
+    top_successful_providers = {}
 
-    if file_path:
-        with open(file_path) as f:
-            data = json.load(f)
-    if data:
-        process_sessions(data, start_date, end_date)
+    for session in data:
+        # Filter by date range if provided
+        session_start_time = session['start_time']
+        if start_date and end_date:
+            if not (start_date <= session_start_time <= end_date):
+                continue
 
-    sorted_failed_providers = sorted(failed_providers_count.items(), key=lambda item: item[1], reverse=True)
-    sorted_successful_providers = sorted(successful_providers_count.items(), key=lambda item: item[1], reverse=True)
+        total_sessions += 1
+
+        soc = session['soc_end']
+        start_soc = session['soc_start']
+
+        if soc == start_soc:
+            total_failed_sessions += 1
+            provider = session['provider']
+            provider = fuzzy_normalize_provider_name(provider)
+            top_failed_providers[provider] = top_failed_providers.get(provider, 0) + 1
+            continue
+
+        total_successful_sessions += 1
+        provider = session['provider']
+        provider = fuzzy_normalize_provider_name(provider)
+        top_successful_providers[provider] = top_successful_providers.get(provider, 0) + 1
+
+    # Exclude "Unknown" providers from the top 5 lists
+    top_failed_providers = {k: v for k, v in top_failed_providers.items() if k != 'Unknown'}
+    top_successful_providers = {k: v for k, v in top_successful_providers.items() if k != 'Unknown'}
 
     return {
-        'total_sessions': total_failed_sessions + total_successful_sessions,
+        'total_sessions': total_sessions,
         'total_failed_sessions': total_failed_sessions,
         'total_successful_sessions': total_successful_sessions,
-        'top_failed_providers': sorted_failed_providers[:5],
-        'top_successful_providers': sorted_successful_providers[:5]
+        'top_failed_providers': sorted(top_failed_providers.items(), key=lambda x: x[1], reverse=True)[:5],
+        'top_successful_providers': sorted(top_successful_providers.items(), key=lambda x: x[1], reverse=True)[:5]
     }
