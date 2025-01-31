@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY charging_stats.py /app/charging_stats.py
 
-CMD ["python", "charging_stats.py"]
+COPY *.py FINAL_DEMO_CHARGING_DATA_SMOOTH_CURVES.JSON /app/
+
+CMD ["python", "app.py"]
