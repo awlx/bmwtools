@@ -3,6 +3,7 @@ import json
 import base64
 import datetime
 import plotly.graph_objs as go
+from concurrent.futures import ThreadPoolExecutor
 from utils import process_data, create_gauge_trace, calculate_overall_stats, create_scatter_plot, calculate_estimated_battery_capacity, create_folium_map
 from successful_failed_sessions import get_session_stats
 from draw_chargers import create_map_string
@@ -57,25 +58,54 @@ def register_callbacks(app):
             {'label': f"{s['start_time'].strftime('%Y-%m-%d %H:%M')} - {s['location']}", 'value': i}
             for i, s in enumerate(sessions)
         ]
-        total_energy_dc = sum(s['energy_added_hvb'] for s in sessions if s['avg_power'] >= 12)
-        total_energy_ac = sum(s['energy_added_hvb'] for s in sessions if s['avg_power'] < 12)
 
-        total_energy_fig = go.Figure()
-        total_energy_fig.add_trace(create_gauge_trace(total_energy_dc, "Total DC Energy (kWh)", "blue", [0, 0.28], range_max=total_energy_dc + total_energy_ac + 10))
-        total_energy_fig.add_trace(create_gauge_trace(total_energy_ac, "Total AC Energy (kWh)", "green", [0.36, 0.64], range_max=total_energy_dc + total_energy_ac + 10))
-        total_energy_fig.add_trace(create_gauge_trace(total_energy_dc + total_energy_ac, "Total Energy (AC + DC)", "purple", [0.72, 1], range_max=total_energy_dc + total_energy_ac + 20))
-        total_energy_fig.update_layout(height=400, width=900, template='plotly_white')
+        def calculate_total_energy():
+            total_energy_dc = sum(s['energy_added_hvb'] for s in sessions if s['avg_power'] >= 12)
+            total_energy_ac = sum(s['energy_added_hvb'] for s in sessions if s['avg_power'] < 12)
+            total_energy_fig = go.Figure()
+            total_energy_fig.add_trace(create_gauge_trace(total_energy_dc, "Total DC Energy (kWh)", "blue", [0, 0.28], range_max=total_energy_dc + total_energy_ac + 10))
+            total_energy_fig.add_trace(create_gauge_trace(total_energy_ac, "Total AC Energy (kWh)", "green", [0.36, 0.64], range_max=total_energy_dc + total_energy_ac + 10))
+            total_energy_fig.add_trace(create_gauge_trace(total_energy_dc + total_energy_ac, "Total Energy (AC + DC)", "purple", [0.72, 1], range_max=total_energy_dc + total_energy_ac + 20))
+            total_energy_fig.update_layout(height=400, width=900, template='plotly_white')
+            return total_energy_fig
 
-        if start_date and end_date:
-            current_km = max(s['mileage'] for s in sessions) - min(s['mileage'] for s in sessions) if sessions else 0
-        else:
-            current_km = max(s['mileage'] for s in sessions) if sessions else 0
+        def calculate_current_km():
+            if start_date and end_date:
+                current_km = max(s['mileage'] for s in sessions) - min(s['mileage'] for s in sessions) if sessions else 0
+            else:
+                current_km = max(s['mileage'] for s in sessions) if sessions else 0
+            current_km_fig = go.Figure()
+            current_km_fig.add_trace(create_gauge_trace(current_km, "Driven km", "orange", [0, 1], range_max=current_km))
+            current_km_fig.update_layout(height=400, width=300, template='plotly_white')
+            return current_km_fig
 
-        current_km_fig = go.Figure()
-        current_km_fig.add_trace(create_gauge_trace(current_km, "Driven km", "orange", [0, 1], range_max=current_km))
-        current_km_fig.update_layout(height=400, width=300, template='plotly_white')
+        def calculate_session_stats():
+            return get_session_stats(data=sessions, start_date=start_date, end_date=end_date)
 
-        session_stats = get_session_stats(data=sessions, start_date=start_date, end_date=end_date)
+        def calculate_map_html():
+            return create_map_string(data, start_date, end_date)
+
+        def calculate_overall_efficiency():
+            return calculate_overall_stats(sessions)
+
+        def calculate_soc_stats():
+            return calculate_soc_statistics(sessions)
+
+        with ThreadPoolExecutor() as executor:
+            total_energy_future = executor.submit(calculate_total_energy)
+            current_km_future = executor.submit(calculate_current_km)
+            session_stats_future = executor.submit(calculate_session_stats)
+            map_html_future = executor.submit(calculate_map_html)
+            overall_efficiency_future = executor.submit(calculate_overall_efficiency)
+            soc_stats_future = executor.submit(calculate_soc_stats)
+
+            total_energy_fig = total_energy_future.result()
+            current_km_fig = current_km_future.result()
+            session_stats = session_stats_future.result()
+            map_html_content = map_html_future.result()
+            overall_efficiency, power_consumption_per_100km, power_consumption_per_100km_without_grid_losses = overall_efficiency_future.result()
+            soc_stats_data = soc_stats_future.result()
+
         total_sessions_fig = go.Figure()
         failed_sessions_fig = go.Figure()
         successful_sessions_fig = go.Figure()
@@ -88,11 +118,6 @@ def register_callbacks(app):
         top_failed_providers = [html.Li(f"{provider}: {count} failed sessions") for provider, count in session_stats['top_failed_providers']]
         top_successful_providers = [html.Li(f"{provider}: {count} successful sessions") for provider, count in session_stats['top_successful_providers']]
 
-        # Process charging data for map
-        map_html_content = create_map_string(data, start_date, end_date)
-
-        overall_efficiency, power_consumption_per_100km, power_consumption_per_100km_without_grid_losses = calculate_overall_stats(sessions)
-        
         overall_efficiency_fig = go.Figure()
         overall_efficiency_fig.add_trace(create_gauge_trace(overall_efficiency * 100, "Overall Efficiency (%)", "blue", [0, 1], range_max=100))
         overall_efficiency_fig.update_layout(height=300, width=300, template='plotly_white')
@@ -114,8 +139,6 @@ def register_callbacks(app):
             current_km_fig.add_trace(create_gauge_trace(current_miles, "Driven miles", "orange", [0, 1], range_max=current_miles))
             current_km_fig.update_layout(height=400, width=300, template='plotly_white')
 
-        # Calculate SOC statistics
-        soc_stats_data = calculate_soc_statistics(sessions)  # Use filtered sessions
         soc_stats = [
             html.Li(f"Total Sessions: {soc_stats_data['total_sessions']}"),
             html.Li(f"Sessions with end SoC > 80%: {soc_stats_data['above_80_count']}"),
