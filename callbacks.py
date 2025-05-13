@@ -129,7 +129,7 @@ def register_callbacks(app):
         warning_style = {'textAlign': 'center', 'color': 'orange', 'fontWeight': 'bold', 'margin': '10px', 'display': 'none'}
         
         if using_estimated_values:
-            warning_message = "⚠️ Warning: Your JSON file is missing 'energyIncreaseHvbKwh' data. Energy values are estimated using 92% efficiency from grid consumption."
+            warning_message = "⚠️ Warning: Your JSON file is missing 'energyIncreaseHvbKwh' data. Energy values are estimated using 98% efficiency for DC charging and 92% efficiency for AC charging."
             warning_style['display'] = 'block'
         
         power_consumption_fig = go.Figure()
