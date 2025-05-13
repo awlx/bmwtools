@@ -147,12 +147,86 @@ def create_scatter_plot(x, y, title, xaxis_title, yaxis_title, color='blue', mod
         name=title
     ))
     if trendline:
-        window_size = max(1, min(20, len(y)))  # Ensure window size is at least 1
+        # Check if this is the SoH plot (battery capacity)
+        if "Battery Capacity" in title or "SoH" in title:
+            # For SoH plots, create a proper trend line by averaging groups of 10 points
+            
+            if len(y) > 0:
+                # Create pairs of x, y data and sort them by date
+                data_pairs = list(zip(x, y))
+                data_pairs.sort(key=lambda pair: pair[0])
+                
+                # Split the data into chunks of 10 points (or fewer for the last chunk)
+                chunk_size = 10
+                chunks = [data_pairs[i:i+chunk_size] for i in range(0, len(data_pairs), chunk_size)]
+                
+                # Calculate average for each chunk
+                chunk_averages = []
+                for chunk in chunks:
+                    chunk_x = [pair[0] for pair in chunk]
+                    chunk_y = [pair[1] for pair in chunk]
+                    avg_x = sum([pd.Timestamp(xi).timestamp() for xi in chunk_x]) / len(chunk_x)
+                    avg_y = sum(chunk_y) / len(chunk_y)
+                    chunk_averages.append((pd.Timestamp.fromtimestamp(avg_x), avg_y))
+                
+                # Print debug info
+                #print(f"DEBUG: Created {len(chunks)} chunks from {len(y)} data points")
+                #print(f"DEBUG: Chunk averages: {[round(avg[1], 2) for avg in chunk_averages]}")
+                
+                # Now create a line connecting these average points
+                if len(chunk_averages) >= 2:
+                    # Sort the averages by date (should already be sorted but just to be safe)
+                    chunk_averages.sort(key=lambda pair: pair[0])
+                    
+                    # Extract x and y values from the averages
+                    avg_x = [pair[0] for pair in chunk_averages]
+                    avg_y = [pair[1] for pair in chunk_averages]
+                    
+                    # Create a trend line that goes through these average points
+                    # We'll use simple linear interpolation between the points
+                    interp_x = x  # Use original x values for smooth curve
+                    interp_y = []
+                    
+                    # For each original x value, interpolate y based on the chunk averages
+                    for xi in interp_x:
+                        xi_ts = pd.Timestamp(xi).timestamp()
+                        
+                        # Find the two neighboring chunk averages
+                        # Default to the first or last chunk average if outside the range
+                        if xi_ts <= pd.Timestamp(avg_x[0]).timestamp():
+                            interp_y.append(avg_y[0])
+                        elif xi_ts >= pd.Timestamp(avg_x[-1]).timestamp():
+                            interp_y.append(avg_y[-1])
+                        else:
+                            # Find the two neighboring points for interpolation
+                            for i in range(len(avg_x) - 1):
+                                x1_ts = pd.Timestamp(avg_x[i]).timestamp()
+                                x2_ts = pd.Timestamp(avg_x[i + 1]).timestamp()
+                                
+                                if x1_ts <= xi_ts <= x2_ts:
+                                    # Linear interpolation
+                                    y1 = avg_y[i]
+                                    y2 = avg_y[i + 1]
+                                    ratio = (xi_ts - x1_ts) / (x2_ts - x1_ts)
+                                    interp_val = y1 + ratio * (y2 - y1)
+                                    interp_y.append(interp_val)
+                                    break
+                    
+                    smoothed_values = interp_y
+                else:
+                    # Not enough chunks, use simple average
+                    simple_mean = sum(y) / len(y)
+                    smoothed_values = [simple_mean for _ in x]
+        else:
+            # For other plots, use the original rolling window approach
+            window_size = max(1, min(20, len(y)))  # Ensure window size is at least 1
+            smoothed_values = pd.Series(y).rolling(window=window_size, min_periods=1).mean()
+            
         fig.add_trace(go.Scatter(
             x=x,
-            y=pd.Series(y).rolling(window=window_size, min_periods=1).mean(),  # Using rolling mean for trendline
+            y=smoothed_values,
             mode='lines',
-            line=dict(color='red'),
+            line=dict(color='red', width=2),  # Make line thicker for better visibility
             name='Trend'
         ))
     # Add labels to the beginning and end of the graph
