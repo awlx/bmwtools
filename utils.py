@@ -37,6 +37,7 @@ def get_disclaimer_with_hash():
 # Function to process JSON data
 def process_data(data):
     sessions = []
+    using_estimated_values = False
     for session in data:
         try:
             start_time = datetime.datetime.fromtimestamp(session['startTime'])
@@ -45,7 +46,15 @@ def process_data(data):
             soc_end = session['displayedSoc']
             energy_from_grid = session['energyConsumedFromPowerGridKwh']
             cost = session.get('chargingCostInformation', {}).get('calculatedChargingCost', 0)
-            efficiency = session.get('energyIncreaseHvbKwh', 0) / energy_from_grid if energy_from_grid else 0
+            
+            # Check if energyIncreaseHvbKwh exists in the data
+            energy_increase_hvb = session.get('energyIncreaseHvbKwh')
+            if energy_increase_hvb is None:
+                # Fallback to using energyConsumedFromPowerGridKwh with estimated efficiency
+                energy_increase_hvb = energy_from_grid * 0.92  # Assuming 92% efficiency as fallback
+                using_estimated_values = True
+            
+            efficiency = energy_increase_hvb / energy_from_grid if energy_from_grid else 0
             location = session.get('chargingLocation', {}).get('formattedAddress', 'Unknown Location')
             latitude = session.get('chargingLocation', {}).get('mapMatchedLatitude', 0)
             longitude = session.get('chargingLocation', {}).get('mapMatchedLongitude', 0)
@@ -61,7 +70,7 @@ def process_data(data):
                 'soc_start': soc_start,
                 'soc_end': soc_end,
                 'energy_from_grid': energy_from_grid,
-                'energy_added_hvb': session.get('energyIncreaseHvbKwh', 0),
+                'energy_added_hvb': energy_increase_hvb,
                 'cost': cost,
                 'efficiency': efficiency,
                 'location': location,
@@ -71,11 +80,12 @@ def process_data(data):
                 'grid_power_start': grid_power_start,
                 'mileage': mileage,
                 'session_time_minutes': session_time_minutes,
-                'provider': provider  # Add provider name
+                'provider': provider,  # Add provider name
+                'using_estimated_energy': energy_increase_hvb != session.get('energyIncreaseHvbKwh')
             })
         except KeyError:
             continue
-    return sessions
+    return sessions, using_estimated_values
 
 # Function to calculate estimated battery capacity (SoH)
 def calculate_estimated_battery_capacity(sessions):

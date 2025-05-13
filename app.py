@@ -33,6 +33,9 @@ app.layout = html.Div([
             style={'textAlign': 'center', 'color': 'red', 'fontWeight': 'bold', "white-space": "pre"}
         )
     ]),
+    
+    # Warning message for estimated values
+    html.Div(id='energy-data-warning', style={'textAlign': 'center', 'color': 'orange', 'fontWeight': 'bold', 'margin': '10px', 'display': 'none'}),
 
     # File upload component
     html.Div([

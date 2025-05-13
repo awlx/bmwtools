@@ -25,7 +25,9 @@ def register_callbacks(app):
          Output('overall-efficiency-gauge', 'figure'),
          Output('power-consumption-gauge', 'figure'),
          Output('power-consumption-without-grid-losses-gauge', 'figure'),
-         Output('soc-stats', 'children')],
+         Output('soc-stats', 'children'),
+         Output('energy-data-warning', 'children'),
+         Output('energy-data-warning', 'style')],
         [Input('upload-json', 'contents'),
          Input('load-demo-data', 'n_clicks'),
          Input('date-picker-range', 'start_date'),
@@ -46,7 +48,7 @@ def register_callbacks(app):
         else:
             return [], None, {}, {}, [], {}, {}, {}, [], "", "", {}, {}, {}, ""
 
-        sessions = process_data(data)
+        sessions, using_estimated_values = process_data(data)
 
         # Filter sessions by date range if selected
         if start_date and end_date:
@@ -122,6 +124,14 @@ def register_callbacks(app):
         overall_efficiency_fig.add_trace(create_gauge_trace(overall_efficiency * 100, "Overall Efficiency (%)", "blue", [0, 1], range_max=100))
         overall_efficiency_fig.update_layout(height=300, width=300, template='plotly_white')
         
+        # Prepare the warning message for when estimated energy values are being used
+        warning_message = None
+        warning_style = {'textAlign': 'center', 'color': 'orange', 'fontWeight': 'bold', 'margin': '10px', 'display': 'none'}
+        
+        if using_estimated_values:
+            warning_message = "⚠️ Warning: Your JSON file is missing 'energyIncreaseHvbKwh' data. Energy values are estimated using 92% efficiency from grid consumption."
+            warning_style['display'] = 'block'
+        
         power_consumption_fig = go.Figure()
         power_consumption_fig.add_trace(create_gauge_trace(power_consumption_per_100km, "Avg Power Consumption (kWh/100km)", "green", [0, 1], range_max=power_consumption_per_100km))
         power_consumption_fig.update_layout(height=300, width=300, template='plotly_white')
@@ -148,7 +158,7 @@ def register_callbacks(app):
             html.Li(f"Failed Sessions: {soc_stats_data['failed_sessions']}")
         ]
 
-        return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers, map_html_content, overall_efficiency_fig, power_consumption_fig, power_consumption_without_grid_losses_fig, soc_stats
+        return options, 0, total_energy_fig, current_km_fig, sessions, total_sessions_fig, failed_sessions_fig, successful_sessions_fig, top_failed_providers, top_successful_providers, map_html_content, overall_efficiency_fig, power_consumption_fig, power_consumption_without_grid_losses_fig, soc_stats, warning_message, warning_style
 
     @app.callback(
         [Output('charge-details-graph', 'figure'),
