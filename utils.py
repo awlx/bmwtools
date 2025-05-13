@@ -50,8 +50,15 @@ def process_data(data):
             # Check if energyIncreaseHvbKwh exists in the data
             energy_increase_hvb = session.get('energyIncreaseHvbKwh')
             if energy_increase_hvb is None:
-                # Fallback to using energyConsumedFromPowerGridKwh with estimated efficiency
-                energy_increase_hvb = energy_from_grid * 0.92  # Assuming 92% efficiency as fallback
+                # Determine if it's DC or AC charging based on average power
+                # Calculate average power first
+                avg_power = sum([block.get('averagePowerGridKw', 0) for block in session.get('chargingBlocks', [])]) / max(len(session.get('chargingBlocks', [])), 1)
+                
+                # Use different efficiency estimates based on charging type
+                if avg_power >= 12:  # DC charging (typically >= 12kW)
+                    energy_increase_hvb = energy_from_grid * 0.98  # 98% efficiency for DC
+                else:  # AC charging
+                    energy_increase_hvb = energy_from_grid * 0.92  # 92% efficiency for AC
                 using_estimated_values = True
             
             efficiency = energy_increase_hvb / energy_from_grid if energy_from_grid else 0
