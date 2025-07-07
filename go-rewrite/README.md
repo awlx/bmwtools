@@ -101,10 +101,6 @@ The Go implementation offers several advantages over the original Python version
 - **Deployment**: Single binary deployment
 - **Security**: Strong type system and memory safety
 
-## License
-
-This project is licensed under the terms of the MIT license.
-
 ## Disclaimer
 
 This application stores all uploaded data in memory. If you refresh, your session is lost.
