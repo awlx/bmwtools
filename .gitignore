@@ -1,2 +1,9 @@
 *.html
 *.json
+bmwtools-server
+go-rewrite/bmwtools-server
+go-rewrite/traefik/*
+!go-rewrite/traefik/README.md
+!go-rewrite/traefik/traefik.yml
+!go-rewrite/traefik/dynamic/*.yml.example
+
