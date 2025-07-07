@@ -1,0 +1,44 @@
+## Traefik Static Configuration
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+# Configure logs
+log:
+  level: "DEBUG"  # You can change to INFO after everything works
+
+# API and dashboard configuration  
+api:
+  dashboard: true
+  insecure: false  # Dashboard is not exposed without authentication
+
+# Entry points configuration
+entryPoints:
+  web:
+    address: ":80"
+    # We'll configure redirections using middleware instead of automatic redirection
+    # to allow HTTP challenge to work properly
+  
+  websecure:
+    address: ":443"
+
+# Configure providers
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: webnet
+  
+  file:
+    directory: "/dynamic"
+    watch: true
+
+# Configure certificate resolvers
+certificatesResolvers:
+  myresolver:
+    acme:
+      email: admin@local.host
+      storage: /acme.json
+      keyType: EC256
+      httpChallenge:
+        entryPoint: web

@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  bmwtools-server:
+    build: .
+    container_name: bmwtools-server
+    restart: always
+    environment:
+      - PORT=8050
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bmwtools-server.rule=Host(`bmwtools.localhost`)"
+      - "traefik.http.routers.bmwtools-server.entrypoints=websecure"
+      - "traefik.http.routers.bmwtools-server.tls.certresolver=myresolver"
+      - "traefik.http.services.bmwtools-server.loadbalancer.server.port=8050"
+    networks:
+      - webnet
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    ports:
+      - mode: host
+        protocol: tcp
+        published: 80
+        target: 80
+      - mode: host
+        protocol: tcp
+        published: 443
+        target: 443
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/traefik.yml
+      - ./traefik/acme.json:/acme.json
+      - ./traefik/dynamic:/dynamic
+    networks:
+      - webnet
+
+networks:
+  webnet:
