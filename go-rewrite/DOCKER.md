@@ -4,14 +4,26 @@ This project is automatically built and published to the GitHub Container Regist
 
 ## How to Use the Docker Image
 
-You can use the published Docker image in your `docker-compose.yml` file:
+### Quick Start - Running Locally
+
+For quick local testing without Docker Compose, you can run the image directly:
+
+```bash
+docker run -p 8050:8050 ghcr.io/awlx/bmwtools:latest
+```
+
+Then access the dashboard by visiting http://127.0.0.1:8050 in your browser.
+
+### Production Setup with Docker Compose
+
+For a more robust setup with Traefik for HTTPS and domain support, use Docker Compose:
 
 ```yaml
 version: '3.8'
 
 services:
   bmwtools-server:
-    image: ghcr.io/awlx/bmwtools/bmwtools:latest
+    image: ghcr.io/awlx/bmwtools:latest
     container_name: bmwtools-server
     restart: always
     environment:
