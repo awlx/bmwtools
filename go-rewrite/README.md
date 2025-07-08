@@ -33,7 +33,22 @@ This application consists of:
 
 ## Installation
 
-### Using Docker (recommended)
+### Using Pre-built Docker Image (recommended)
+
+The application is automatically built and published to GitHub Container Registry:
+
+```bash
+# Pull the latest version
+docker pull ghcr.io/awlx/bmwtools/bmwtools:latest
+
+# Create a docker-compose.yml file (see DOCKER.md for complete example)
+# Run the application
+docker-compose up -d
+```
+
+For more details on using the pre-built Docker image, see [DOCKER.md](DOCKER.md).
+
+### Building Docker Image Locally
 
 ```bash
 # Clone the repository

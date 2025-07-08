@@ -7,3 +7,9 @@ go-rewrite/traefik/*
 !go-rewrite/traefik/traefik.yml
 !go-rewrite/traefik/dynamic/*.yml.example
 
+# GitHub Actions local testing
+.act/
+
+# Docker build cache
+.docker/
+
