@@ -362,14 +362,18 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 	// Convert to slices for sorting
 	var successfulProviders []ProviderStats
 	var failedProviders []ProviderStats
+	const MIN_SESSIONS = 50 // Minimum number of sessions to include in the stats
 
 	for _, stats := range groupedProviders {
-		if stats.SuccessCount > 0 {
-			successfulProviders = append(successfulProviders, *stats)
-		}
+		// Only include providers with at least MIN_SESSIONS total sessions
+		if stats.Total >= MIN_SESSIONS {
+			if stats.SuccessCount > 0 {
+				successfulProviders = append(successfulProviders, *stats)
+			}
 
-		if stats.FailedCount > 0 {
-			failedProviders = append(failedProviders, *stats)
+			if stats.FailedCount > 0 {
+				failedProviders = append(failedProviders, *stats)
+			}
 		}
 	}
 
@@ -391,9 +395,21 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 		failedProviders = failedProviders[:5]
 	}
 
+	// Get all providers (including those with fewer than MIN_SESSIONS) for the "all_providers" list
+	var allProviders []ProviderStats
+	for _, stats := range groupedProviders {
+		allProviders = append(allProviders, *stats)
+	}
+
+	// Sort all providers by total count
+	sort.Slice(allProviders, func(i, j int) bool {
+		return allProviders[i].Total > allProviders[j].Total
+	})
+
 	// Return the result
 	return map[string]interface{}{
 		"grouped_successful_providers": successfulProviders,
 		"grouped_failed_providers":     failedProviders,
+		"all_providers":                allProviders,
 	}
 }
