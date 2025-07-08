@@ -39,7 +39,7 @@ The application is automatically built and published to GitHub Container Registr
 
 ***REMOVED***
 # Pull the latest version
-docker pull ghcr.io/awlx/bmwtools/bmwtools:latest
+docker pull ghcr.io/awlx/bmwtools:latest
 
 # Create a docker-compose.yml file (see DOCKER.md for complete example)
 # Run the application
