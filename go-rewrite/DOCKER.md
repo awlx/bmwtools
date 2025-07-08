@@ -14,6 +14,21 @@ docker run -p 8050:8050 ghcr.io/awlx/bmwtools:latest
 
 Then access the dashboard by visiting http://127.0.0.1:8050 in your browser.
 
+#### Building Locally 
+
+If you want to build the image yourself go with the following steps:
+
+```bash
+# Navigate to the go-rewrite directory
+cd go-rewrite
+
+# Build the Docker image locally for your platform
+docker build -t bmwtools-local .
+
+# Run the locally built image
+docker run -p 8050:8050 bmwtools-local
+```
+
 ### Production Setup with Docker Compose
 
 For a more robust setup with Traefik for HTTPS and domain support, use Docker Compose:
@@ -51,6 +66,13 @@ The following tags are available for the Docker image:
 - `vX.Y.Z`: Specific version (e.g., v1.0.0)
 - `vX.Y`: Major.Minor version (e.g., v1.0)
 - `sha-XXXXXXX`: Specific commit SHA (short format)
+
+## Platform Support
+
+The Docker images are built for multiple architectures:
+
+- `linux/amd64`: For Intel/AMD based systems
+- `linux/arm64`: For ARM-based systems (M1/M2/M3 Macs, Raspberry Pi, etc.)
 
 ## Authentication
 
