@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMW CarData - Charging Session Dashboard</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <!-- Include Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <!-- Include Leaflet for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>BMW CarData - Charging Session Dashboard</h1>
+            <div id="disclaimer" class="disclaimer"></div>
+            <div id="energy-data-warning" class="warning"></div>
+        </header>
+
+        <section class="upload-section">
+            <div class="upload-container">
+                <input type="file" id="upload-json" accept=".json" class="file-input">
+                <label for="upload-json" class="file-label">
+                    Drag and Drop or Select your CarData JSON file (BMW-CarData-Ladehistorie_*.json)
+                </label>
+            </div>
+            <button id="load-demo-data" class="button">Load Demo Data</button>
+        </section>
+
+        <section class="date-filter">
+            <label>Select Date Range for analysis (optional):</label>
+            <div class="date-picker">
+                <input type="date" id="start-date" placeholder="Start Date">
+                <input type="date" id="end-date" placeholder="End Date">
+                <button id="apply-date-filter" class="button">Apply</button>
+            </div>
+            <button id="toggle-units" class="button">Toggle Units (km/miles)</button>
+        </section>
+
+        <section class="gauge-panels">
+            <div class="gauge-row">
+                <div id="total-energy-gauge" class="gauge-chart"></div>
+                <div id="current-km-gauge" class="gauge-chart"></div>
+            </div>
+            
+            <div class="gauge-row">
+                <div id="overall-efficiency-gauge" class="gauge-chart"></div>
+                <div id="power-consumption-gauge" class="gauge-chart"></div>
+                <div id="power-consumption-without-grid-losses-gauge" class="gauge-chart"></div>
+            </div>
+            
+            <div class="gauge-row">
+                <div id="total-sessions-gauge" class="gauge-chart"></div>
+                <div id="successful-sessions-gauge" class="gauge-chart"></div>
+                <div id="failed-sessions-gauge" class="gauge-chart"></div>
+            </div>
+        </section>
+
+        <section class="providers">
+            <div class="providers-container">
+                <div>
+                    <h4>Top 5 Successful Providers</h4>
+                    <ul id="top-successful-providers"></ul>
+                </div>
+                <div>
+                    <h4>Top 5 Failed Providers</h4>
+                    <ul id="top-failed-providers"></ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="soc-stats">
+            <h4>SOC Statistics</h4>
+            <ul id="soc-stats"></ul>
+        </section>
+
+        <section class="charts">
+            <div id="overview-scatterplot" class="chart"></div>
+            <div id="average-gridpower-scatterplot" class="chart"></div>
+            <div id="estimated-battery-capacity-scatterplot" class="chart"></div>
+        </section>
+
+        <section class="maps">
+            <div id="charging-locations-map" class="map"></div>
+        </section>
+
+        <section class="session-selector">
+            <label>Select Charging Session by Time and Location:</label>
+            <select id="session-dropdown"></select>
+        </section>
+
+        <section class="session-details">
+            <h3 id="session-info"></h3>
+            <div class="session-details-container">
+                <div class="left-panel">
+                    <div id="range-map" class="map"></div>
+                    <div id="combined-gauges" class="chart"></div>
+                </div>
+                <div class="right-panel">
+                    <div id="charge-details-graph" class="chart"></div>
+                    <div id="grid-power-graph" class="chart"></div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
