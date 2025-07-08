@@ -47,19 +47,6 @@ function setupEventListeners() {
     toggleUnitsBtn.addEventListener('click', toggleUnits);
     sessionDropdownEl.addEventListener('change', handleSessionSelection);
     
-    // Add provider debugging methods to global scope
-    window.debugProviderMatching = false; // Off by default
-    
-    // Function to toggle provider debugging
-    window.toggleProviderDebug = function() {
-        window.debugProviderMatching = !window.debugProviderMatching;
-        console.log(`Provider matching debugging ${window.debugProviderMatching ? 'enabled' : 'disabled'}`);
-        if (window.debugProviderMatching) {
-            console.log("Refresh the page or apply date filter to see debug output.");
-        }
-        return window.debugProviderMatching;
-    };
-    
     // Function to adjust the similarity threshold
     window.setProviderSimilarityThreshold = function(threshold) {
         if (threshold >= 0 && threshold <= 1) {
@@ -72,6 +59,9 @@ function setupEventListeners() {
         }
     };
 }
+
+// Toggle debug mode and refresh data
+
 
 // Handle file upload
 async function handleFileUpload(event) {
@@ -576,14 +566,6 @@ async function updateProviderLists(sessionStats) {
         const groupedFailedProviders = groupedProvidersData.grouped_failed_providers || [];
         const allProviders = groupedProvidersData.all_providers || [];
         
-        if (window.debugProviderMatching) {
-            console.group("Provider Grouping Results (from backend):");
-            console.log("Successful Providers:", groupedSuccessfulProviders);
-            console.log("Failed Providers:", groupedFailedProviders);
-            console.log("All Providers:", allProviders);
-            console.groupEnd();
-        }
-        
         // Create the all providers section
         if (allProviders && allProviders.length > 0) {
             createAllProvidersSection(allProviders);
@@ -781,6 +763,9 @@ async function updateProviderLists(sessionStats) {
             topSuccessfulProvidersEl.appendChild(noSuccess);
         }
     }
+    
+    // Create a section to display debug info about unknown providers
+
     
     // Create a section to display all providers
     function createAllProvidersSection(allProviders) {

@@ -1,6 +1,7 @@
 package data
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,6 +24,19 @@ func normalizeProviderName(name string) string {
 		return "Unknown"
 	}
 
+	// Special handling for known problematic cases
+	knownMappings := map[string]string{
+		"E.ON": "eon",
+		"E-ON": "eon",
+		"E ON": "eon",
+		"EON":  "eon",
+	}
+
+	// Check if we have a direct mapping for this provider
+	if normalized, exists := knownMappings[name]; exists {
+		return normalized
+	}
+
 	// Convert to lowercase
 	normalized := strings.ToLower(name)
 
@@ -31,22 +45,26 @@ func normalizeProviderName(name string) string {
 	normalized = prefixRegex.ReplaceAllString(normalized, "")
 
 	// Remove common entity types
-	entityRegex := regexp.MustCompile(`\b(gmbh|ag|ltd|llc|inc|kg|co\.|corporation|holding|mbh|group)\b`)
+	entityRegex := regexp.MustCompile(`\b(gmbh|ag|ltd|llc|inc|kg|co\.|corporation|holding|mbh|group|bv|networks|gmbh&co|kg|solutions)\b`)
 	normalized = entityRegex.ReplaceAllString(normalized, "")
 
 	// Remove charging types
-	chargingRegex := regexp.MustCompile(`\b(hpc|dc|ac|ultra|supercharger|fast|rapid|schnell|lader|charger|charging|punkt|power|station)\b`)
+	chargingRegex := regexp.MustCompile(`\b(hpc|dc|ac|ultra|supercharger|super|charger|fast|rapid|schnell|lader|charger|charging|punkt|power|station|ladepunkt|ladestationen|ladestation)\b`)
 	normalized = chargingRegex.ReplaceAllString(normalized, "")
 
 	// Remove country and region designations
-	countryRegex := regexp.MustCompile(`\b(germany|deutschland|de|europe|european|eu|nord|süd|sud|west|ost|east|north|south)\b`)
+	countryRegex := regexp.MustCompile(`\b(germany|deutschland|de|europe|european|eu|nord|süd|sud|west|ost|east|north|south|international|global)\b`)
 	normalized = countryRegex.ReplaceAllString(normalized, "")
 
 	// Remove common words that don't help identify the provider
-	commonRegex := regexp.MustCompile(`\b(charging|station|network|services|mobility|energy|power|elektro|electric)\b`)
+	commonRegex := regexp.MustCompile(`\b(charging|station|network|services|mobility|energy|power|elektro|electric|renewables|eMobility|infrastructure|technologie|technology|emobility)\b`)
 	normalized = commonRegex.ReplaceAllString(normalized, "")
 
-	// Remove all special characters and numbers
+	// Remove all special characters and numbers, but preserve - in E-ON and similar
+	normalized = strings.Replace(normalized, "e-on", "eon", -1)
+	normalized = strings.Replace(normalized, "e.on", "eon", -1)
+	normalized = strings.Replace(normalized, "e on", "eon", -1)
+
 	specialRegex := regexp.MustCompile(`[\/\-_.,()0-9]`)
 	normalized = specialRegex.ReplaceAllString(normalized, " ")
 
@@ -58,9 +76,22 @@ func normalizeProviderName(name string) string {
 	// Special handling for common suffixes
 	normalized = strings.TrimSuffix(normalized, " mobility")
 	normalized = strings.TrimSuffix(normalized, " plus")
+	normalized = strings.TrimSuffix(normalized, " drive")
+	normalized = strings.TrimSuffix(normalized, " recharge")
 
-	// If after all normalization the string is empty, return the original name
+	// If after all normalization the string is empty, return a recognizable name
 	if normalized == "" {
+		// If the original had letters, try to preserve them
+		letterOnlyName := strings.TrimSpace(strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				return r
+			}
+			return -1
+		}, name))
+
+		if letterOnlyName != "" {
+			return strings.ToLower(letterOnlyName)
+		}
 		return name
 	}
 
@@ -69,12 +100,13 @@ func normalizeProviderName(name string) string {
 
 // calculateStringSimilarity calculates similarity between two strings (0-1)
 func calculateStringSimilarity(str1, str2 string) float64 {
-	if str1 == "" || str2 == "" {
-		return 0.0
+	// Check for exact matches first (case-insensitive)
+	if strings.EqualFold(str1, str2) {
+		return 1.0
 	}
 
-	if str1 == str2 {
-		return 1.0
+	if str1 == "" || str2 == "" {
+		return 0.0
 	}
 
 	// Special case for Unknown providers
@@ -85,6 +117,33 @@ func calculateStringSimilarity(str1, str2 string) float64 {
 	if str1 == "Unknown" || str2 == "Unknown" {
 		// Don't match Unknown with anything else
 		return 0.0
+	}
+
+	// Special handling for short abbreviations that are known to be the same
+	shortForms := map[string][]string{
+		"eon": {"e.on", "e-on", "e on"},
+		"ewe": {"ewe go"},
+		"rwe": {"rwe mobility"},
+	}
+
+	// Check if either string is a known abbreviation of the other
+	for abbr, variations := range shortForms {
+		// Check if str1 is the abbreviation and str2 is a variation
+		if strings.EqualFold(str1, abbr) {
+			for _, variation := range variations {
+				if strings.EqualFold(str2, variation) {
+					return 0.9 // High similarity but not exact match
+				}
+			}
+		}
+		// Check if str2 is the abbreviation and str1 is a variation
+		if strings.EqualFold(str2, abbr) {
+			for _, variation := range variations {
+				if strings.EqualFold(str1, variation) {
+					return 0.9 // High similarity but not exact match
+				}
+			}
+		}
 	}
 
 	s1 := normalizeProviderName(str1)
@@ -245,6 +304,20 @@ func max(a, b int) int {
 	return b
 }
 
+// UnknownProviderInfo stores information about providers that end up as "Unknown"
+type UnknownProviderInfo struct {
+	OriginalValue string `json:"original_value"`
+	Reason        string `json:"reason"`
+}
+
+// ProviderMatchInfo stores information about how providers were matched during grouping
+type ProviderMatchInfo struct {
+	OriginalProvider string  `json:"original_provider"`
+	MatchedProvider  string  `json:"matched_provider"`
+	Similarity       float64 `json:"similarity"`
+	IsUnknown        bool    `json:"is_unknown"`
+}
+
 // GroupProviders groups similar providers together
 func (m *Manager) GroupProviders() map[string]interface{} {
 	// Create maps for tracking provider stats - we'll use groupedProviders directly
@@ -277,28 +350,84 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 	// Group similar providers
 	groupedProviders := make(map[string]*ProviderStats)
 
+	// Create a map to track what's ending up as "Unknown"
+	unknownProvidersMap := make(map[string]UnknownProviderInfo)
+
+	// Create a map to track all provider matches
+	providerMatchesMap := make(map[string]ProviderMatchInfo)
+
 	// Process each provider
 	for _, providerObj := range originalProviders {
 		provider := providerObj["provider"].(string)
 		count := providerObj["count"].(int)
 		providerType := providerObj["type"].(string)
 
+		// Store original value for debugging
+		originalProvider := provider
+
+		// Whitelist of valid short provider names that shouldn't be marked as Unknown
+		validShortProviders := map[string]bool{
+			"E.ON": true,
+			"EON":  true,
+			"EWE":  true,
+			"RWE":  true,
+			"E-ON": true,
+			"E ON": true,
+			"BEW":  true,
+			"NEW":  true,
+			"MER":  true,
+			"LEW":  true,
+		}
+
 		// Skip empty providers or handle spaces/special characters that might be causing "Unknown"
 		if provider == "" {
 			provider = "Unknown"
+			// Track empty string providers
+			unknownProvidersMap["EMPTY_STRING"] = UnknownProviderInfo{
+				OriginalValue: "",
+				Reason:        "Empty string",
+			}
 		} else {
 			// Trim any leading/trailing whitespace
 			provider = strings.TrimSpace(provider)
 			// Fix some common patterns that might lead to Unknown
 			provider = strings.Replace(provider, "  ", " ", -1)
-			// If it's just special characters or extremely short, mark as Unknown
-			if len(strings.TrimSpace(strings.Map(func(r rune) rune {
-				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-					return r
+
+			// Check if it's in our whitelist of valid short providers first
+			upperProvider := strings.ToUpper(provider)
+			if validShortProviders[upperProvider] {
+				// This is a valid short provider, don't mark as Unknown
+			} else {
+				// If it's just special characters or extremely short, mark as Unknown
+				letterCount := len(strings.TrimSpace(strings.Map(func(r rune) rune {
+					if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+						return r
+					}
+					return -1
+				}, provider)))
+
+				// Check for special cases
+				isOnlyNumbers := len(strings.TrimSpace(strings.Map(func(r rune) rune {
+					if r >= '0' && r <= '9' {
+						return r
+					}
+					return -1
+				}, provider))) == len(strings.TrimSpace(provider))
+
+				// Only mark as unknown if too few letters and not a whitelisted provider
+				if letterCount < 2 {
+					reason := fmt.Sprintf("Too few letters (%d): %s", letterCount, provider)
+					if isOnlyNumbers {
+						reason = fmt.Sprintf("Only numbers: %s", provider)
+					}
+
+					// Track what got marked as Unknown with the original provider as key
+					unknownProvidersMap[originalProvider] = UnknownProviderInfo{
+						OriginalValue: originalProvider,
+						Reason:        reason,
+					}
+					provider = "Unknown"
 				}
-				return -1
-			}, provider))) < 2 {
-				provider = "Unknown"
 			}
 		}
 
@@ -338,6 +467,22 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 			existing.SuccessCount += successCount
 			existing.FailedCount += failedCount
 			existing.Total = existing.SuccessCount + existing.FailedCount
+
+			// Track all provider matches for debugging
+			providerMatchesMap[originalProvider] = ProviderMatchInfo{
+				OriginalProvider: originalProvider,
+				MatchedProvider:  bestMatchKey,
+				Similarity:       bestSimilarity,
+				IsUnknown:        bestMatchKey == "Unknown",
+			}
+
+			// Track matches to Unknown
+			if bestMatchKey == "Unknown" && originalProvider != "Unknown" {
+				unknownProvidersMap[originalProvider] = UnknownProviderInfo{
+					OriginalValue: originalProvider,
+					Reason:        fmt.Sprintf("Matched to Unknown with similarity: %.2f", bestSimilarity),
+				}
+			}
 		} else {
 			// Otherwise add as new provider
 			groupedProviders[provider] = &ProviderStats{
@@ -362,18 +507,15 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 	// Convert to slices for sorting
 	var successfulProviders []ProviderStats
 	var failedProviders []ProviderStats
-	const MIN_SESSIONS = 50 // Minimum number of sessions to include in the stats
 
 	for _, stats := range groupedProviders {
-		// Only include providers with at least MIN_SESSIONS total sessions
-		if stats.Total >= MIN_SESSIONS {
-			if stats.SuccessCount > 0 {
-				successfulProviders = append(successfulProviders, *stats)
-			}
+		// Include all providers regardless of number of sessions
+		if stats.SuccessCount > 0 {
+			successfulProviders = append(successfulProviders, *stats)
+		}
 
-			if stats.FailedCount > 0 {
-				failedProviders = append(failedProviders, *stats)
-			}
+		if stats.FailedCount > 0 {
+			failedProviders = append(failedProviders, *stats)
 		}
 	}
 
@@ -395,7 +537,7 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 		failedProviders = failedProviders[:5]
 	}
 
-	// Get all providers (including those with fewer than MIN_SESSIONS) for the "all_providers" list
+	// Get all providers for the "all_providers" list
 	var allProviders []ProviderStats
 	for _, stats := range groupedProviders {
 		allProviders = append(allProviders, *stats)
@@ -406,10 +548,34 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 		return allProviders[i].Total > allProviders[j].Total
 	})
 
-	// Return the result
+	// Convert unknownProvidersMap to a slice for the response
+	var unknownProvidersList []UnknownProviderInfo
+	for _, info := range unknownProvidersMap {
+		unknownProvidersList = append(unknownProvidersList, info)
+	}
+
+	// Sort the unknown providers list by original value
+	sort.Slice(unknownProvidersList, func(i, j int) bool {
+		return unknownProvidersList[i].OriginalValue < unknownProvidersList[j].OriginalValue
+	})
+
+	// Convert providerMatchesMap to a slice for the response
+	var providerMatches []ProviderMatchInfo
+	for _, info := range providerMatchesMap {
+		providerMatches = append(providerMatches, info)
+	}
+
+	// Sort the provider matches list by original provider
+	sort.Slice(providerMatches, func(i, j int) bool {
+		return providerMatches[i].OriginalProvider < providerMatches[j].OriginalProvider
+	})
+
+	// Return the result with debug information
 	return map[string]interface{}{
 		"grouped_successful_providers": successfulProviders,
 		"grouped_failed_providers":     failedProviders,
 		"all_providers":                allProviders,
+		"unknown_providers_debug":      unknownProvidersList,
+		"provider_matches":             providerMatches,
 	}
 }
