@@ -3,6 +3,8 @@
 bmwtools-server
 go-rewrite/bmwtools-server
 go-rewrite/traefik/*
+go-rewrite/pkg/data/real_data_test.go
+__pycache__/**
 !go-rewrite/traefik/README.md
 !go-rewrite/traefik/traefik.yml
 !go-rewrite/traefik/dynamic/*.yml.example
