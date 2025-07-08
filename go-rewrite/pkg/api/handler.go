@@ -338,7 +338,14 @@ func (h *Handler) GetGroupedProviders(c *gin.Context) {
 	// Get grouped provider statistics
 	groupedProviders := tempManager.GroupProviders()
 
-	c.JSON(http.StatusOK, groupedProviders)
+	// Return the data, ensuring the all_providers field is properly handled
+	response := map[string]interface{}{
+		"grouped_successful_providers": groupedProviders["grouped_successful_providers"],
+		"grouped_failed_providers":     groupedProviders["grouped_failed_providers"],
+		"all_providers":                groupedProviders["all_providers"],
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // End of handler functions

@@ -501,6 +501,11 @@ async function updateProviderLists(sessionStats) {
             if (previousSibling && previousSibling.tagName === 'H3') {
                 previousSibling.remove();
             }
+            // Also remove the note if it exists
+            let nextSibling = element.nextElementSibling;
+            if (nextSibling && nextSibling.classList.contains('threshold-note')) {
+                nextSibling.remove();
+            }
         };
         
         removeExistingTitles(topFailedProvidersEl);
@@ -524,6 +529,23 @@ async function updateProviderLists(sessionStats) {
         successTitle.style.fontSize = '18px';
         successTitle.style.textAlign = 'center';
         topSuccessfulProvidersEl.parentNode.insertBefore(successTitle, topSuccessfulProvidersEl);
+        
+        // Create and add note about 50+ sessions threshold
+        const thresholdNote = document.createElement('div');
+        thresholdNote.classList.add('threshold-note');
+        thresholdNote.textContent = 'Note: Only providers with 50+ sessions are displayed in these charts';
+        thresholdNote.style.fontSize = '12px';
+        thresholdNote.style.fontStyle = 'italic';
+        thresholdNote.style.color = '#666';
+        thresholdNote.style.textAlign = 'center';
+        thresholdNote.style.margin = '0 0 10px 0';
+        
+        // Add the note after each provider list
+        const failedNote = thresholdNote.cloneNode(true);
+        topFailedProvidersEl.parentNode.insertBefore(failedNote, topFailedProvidersEl.nextSibling);
+        
+        const successNote = thresholdNote.cloneNode(true);
+        topSuccessfulProvidersEl.parentNode.insertBefore(successNote, topSuccessfulProvidersEl.nextSibling);
     };
     
     // Add the titles to the page
@@ -552,12 +574,19 @@ async function updateProviderLists(sessionStats) {
         // Extract the lists from the response
         const groupedSuccessfulProviders = groupedProvidersData.grouped_successful_providers || [];
         const groupedFailedProviders = groupedProvidersData.grouped_failed_providers || [];
+        const allProviders = groupedProvidersData.all_providers || [];
         
         if (window.debugProviderMatching) {
             console.group("Provider Grouping Results (from backend):");
             console.log("Successful Providers:", groupedSuccessfulProviders);
             console.log("Failed Providers:", groupedFailedProviders);
+            console.log("All Providers:", allProviders);
             console.groupEnd();
+        }
+        
+        // Create the all providers section
+        if (allProviders && allProviders.length > 0) {
+            createAllProvidersSection(allProviders);
         }
         
         // Helper function to create provider item for either failed or successful providers
@@ -751,6 +780,126 @@ async function updateProviderLists(sessionStats) {
             noSuccess.style.color = '#666';
             topSuccessfulProvidersEl.appendChild(noSuccess);
         }
+    }
+    
+    // Create a section to display all providers
+    function createAllProvidersSection(allProviders) {
+        // Find the container where we'll add the all providers section
+        const container = document.querySelector('.container');
+        if (!container) return;
+        
+        // Check if the section already exists and remove it if it does
+        let existingSection = document.getElementById('all-providers-section');
+        if (existingSection) {
+            existingSection.remove();
+        }
+        
+        // Create the section
+        const section = document.createElement('div');
+        section.id = 'all-providers-section';
+        section.className = 'row';
+        section.style.marginTop = '30px';
+        section.style.marginBottom = '30px';
+        section.style.padding = '15px';
+        section.style.backgroundColor = '#f9f9f9';
+        section.style.borderRadius = '8px';
+        section.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+        
+        // Create the header
+        const header = document.createElement('div');
+        header.className = 'col-12';
+        header.innerHTML = `
+            <h3 style="text-align: center; margin-bottom: 20px;">All Charging Providers</h3>
+            <p style="text-align: center; margin-bottom: 20px;">Complete list of all providers, including those with fewer than 50 sessions</p>
+        `;
+        section.appendChild(header);
+        
+        // Create the table container
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'col-12';
+        tableContainer.style.overflowX = 'auto';
+        
+        // Create the table
+        const table = document.createElement('table');
+        table.className = 'table table-striped table-hover';
+        table.style.width = '100%';
+        
+        // Create table header
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+            <tr>
+                <th style="width: 40%">Provider Name</th>
+                <th style="width: 15%">Total Sessions</th>
+                <th style="width: 15%">Successful</th>
+                <th style="width: 15%">Failed</th>
+                <th style="width: 15%">Success Rate</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+        
+        // Create table body
+        const tbody = document.createElement('tbody');
+        
+        // Sort providers by total sessions (descending)
+        allProviders.sort((a, b) => b.total - a.total);
+        
+        // Add rows for each provider
+        allProviders.forEach(provider => {
+            const row = document.createElement('tr');
+            
+            // Provider name cell
+            const nameCell = document.createElement('td');
+            nameCell.textContent = provider.provider;
+            nameCell.style.fontWeight = 'bold';
+            
+            // Total sessions cell
+            const totalCell = document.createElement('td');
+            totalCell.textContent = provider.total;
+            
+            // Successful sessions cell
+            const successCell = document.createElement('td');
+            successCell.textContent = provider.successful_count;
+            successCell.style.color = '#2ecc71';
+            
+            // Failed sessions cell
+            const failedCell = document.createElement('td');
+            failedCell.textContent = provider.failed_count;
+            failedCell.style.color = '#e74c3c';
+            
+            // Success rate cell
+            const rateCell = document.createElement('td');
+            const successRate = provider.success_rate;
+            rateCell.textContent = `${successRate.toFixed(1)}%`;
+            
+            // Color the success rate based on percentage
+            if (successRate >= 90) {
+                rateCell.style.color = '#27ae60';  // Dark green
+                rateCell.style.fontWeight = 'bold';
+            } else if (successRate >= 75) {
+                rateCell.style.color = '#2ecc71';  // Green
+            } else if (successRate >= 50) {
+                rateCell.style.color = '#f39c12';  // Orange
+            } else {
+                rateCell.style.color = '#e74c3c';  // Red
+            }
+            
+            // Add cells to row
+            row.appendChild(nameCell);
+            row.appendChild(totalCell);
+            row.appendChild(successCell);
+            row.appendChild(failedCell);
+            row.appendChild(rateCell);
+            
+            // Add row to table body
+            tbody.appendChild(row);
+        });
+        
+        table.appendChild(tbody);
+        tableContainer.appendChild(table);
+        section.appendChild(tableContainer);
+        
+        // Add to container
+        container.appendChild(section);
     }
 }
 
