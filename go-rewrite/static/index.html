@@ -90,11 +90,14 @@
             <label>Select Charging Session by Time and Location:</label>
             <select id="session-dropdown"></select>
         </section>
-
+        
         <section class="session-details">
             <h3 id="session-info"></h3>
-            <!-- Map moved above the session details container -->
-            <div id="range-map" class="map"></div>
+            
+            <!-- Map moved inside session details section but above session details container -->
+            <section class="map-section">
+                <div id="range-map" class="map"></div>
+            </section>
             
             <div class="session-details-container">
                 <div class="left-panel">
