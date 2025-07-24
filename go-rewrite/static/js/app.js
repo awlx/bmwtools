@@ -119,7 +119,7 @@ async function handleFileUpload(event) {
 // Generic file upload function
 async function uploadFile(file) {
     // Check if file name contains the expected pattern
-    if (!file.name.includes('BMW-CarData-Ladehistorie_')) {
+    if (!file.name.includes('BMW-CarData-')) {
         const proceed = confirm("The file doesn't match the expected pattern 'BMW-CarData-Ladehistorie_*'. Are you sure you want to upload it?");
         if (!proceed) return;
     }
