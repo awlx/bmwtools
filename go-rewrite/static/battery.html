@@ -176,8 +176,11 @@
         
         async function loadBatteryHealthData() {
             try {
-                const modelFilter = document.getElementById('model-filter').value;
-                const url = `/api/battery-health${modelFilter ? `?model=${encodeURIComponent(modelFilter)}` : ''}`;
+                const modelFilter = document.getElementById('model-filter');
+                const selectedModel = modelFilter.value;
+                
+                // Always include model parameter if we have one
+                const url = `/api/battery-health${selectedModel ? `?model=${encodeURIComponent(selectedModel)}` : ''}`;
                 
                 const response = await fetch(url);
                 if (!response.ok) {
