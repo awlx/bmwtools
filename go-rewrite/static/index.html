@@ -93,10 +93,12 @@
 
         <section class="session-details">
             <h3 id="session-info"></h3>
+            <!-- Map moved above the session details container -->
+            <div id="range-map" class="map"></div>
+            
             <div class="session-details-container">
                 <div class="left-panel">
-                    <div id="range-map" class="map"></div>
-                    <div id="combined-gauges" class="chart"></div>
+                    <div id="combined-gauges" class="chart" style="height: auto; min-height: 600px;"></div>
                 </div>
                 <div class="right-panel">
                     <div id="charge-details-graph" class="chart"></div>
@@ -105,6 +107,15 @@
             </div>
         </section>
     </div>
+
+    <footer>
+        <div class="imprint">
+            <h3>Impressum</h3>
+            <p>Freie Netze München e. V.</p>
+            <p>Parkstraße 28</p>
+            <p>82131 Gauting</p>
+        </div>
+    </footer>
 
     <script src="/static/js/app.js"></script>
 </body>

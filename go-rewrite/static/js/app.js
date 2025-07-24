@@ -4,13 +4,51 @@ let currentSession = null;
 let useMiles = false;
 let chargingLocationsMap = null;
 
-// Define a common Plotly template with the website background color
+// Define a modern Plotly template with enhanced styling
 const plotlyTemplate = {
     layout: {
-        paper_bgcolor: '#f5f5f5',
-        plot_bgcolor: '#f5f5f5',
+        paper_bgcolor: '#ffffff',
+        plot_bgcolor: '#ffffff',
         font: {
-            color: '#333'
+            family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+            color: '#444',
+            size: 12
+        },
+        title: {
+            font: {
+                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                size: 18,
+                color: '#333'
+            }
+        },
+        colorway: ['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6', '#1abc9c', '#34495e', '#7f8c8d', '#d35400', '#c0392b'],
+        legend: {
+            bgcolor: '#ffffff',
+            bordercolor: '#f0f0f0',
+            borderwidth: 1,
+            font: {
+                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                size: 12,
+                color: '#555'
+            }
+        },
+        xaxis: {
+            gridcolor: '#f0f0f0',
+            zerolinecolor: '#e0e0e0',
+            tickfont: {
+                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                size: 12,
+                color: '#555'
+            }
+        },
+        yaxis: {
+            gridcolor: '#f0f0f0',
+            zerolinecolor: '#e0e0e0',
+            tickfont: {
+                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                size: 12,
+                color: '#555'
+            }
         }
     }
 };
@@ -289,7 +327,7 @@ function updateSessionDetails() {
     createRangeMap();
 }
 
-// Create total energy gauge
+// Create modern total energy visualization
 function createTotalEnergyGauge() {
     if (sessions.length === 0) return;
 
@@ -303,62 +341,180 @@ function createTotalEnergyGauge() {
     
     const totalEnergy = totalEnergyDc + totalEnergyAc;
     
+    // Create a modern stacked bar chart with percentage breakdown
     const data = [
         {
-            type: "indicator",
-            mode: "gauge+number",
-            value: totalEnergyDc,
-            title: { text: "Total DC Energy (kWh)", font: { size: 14 } },
-            gauge: {
-                axis: { range: [0, totalEnergy + 10] },
-                bar: { color: "blue" },
-                borderwidth: 2
+            x: ['Total Energy'],
+            y: [totalEnergyDc],
+            name: 'DC Energy',
+            type: 'bar',
+            marker: {
+                color: '#3498db',  // Blue for DC energy
+                line: {
+                    color: 'rgba(0,0,0,0.1)',
+                    width: 1
+                }
             },
-            domain: { x: [0, 0.28], y: [0, 1] }
+            text: [`${totalEnergyDc.toFixed(1)} kWh (${((totalEnergyDc / totalEnergy) * 100).toFixed(0)}%)`],
+            textposition: 'inside',
+            insidetextfont: {
+                color: 'white',
+                size: 14
+            },
+            hovertemplate: 'DC Energy: %{y:.1f} kWh<br>%{text}<extra></extra>'
         },
         {
-            type: "indicator",
-            mode: "gauge+number",
-            value: totalEnergyAc,
-            title: { text: "Total AC Energy (kWh)", font: { size: 14 } },
-            gauge: {
-                axis: { range: [0, totalEnergy + 10] },
-                bar: { color: "green" },
-                borderwidth: 2
+            x: ['Total Energy'],
+            y: [totalEnergyAc],
+            name: 'AC Energy',
+            type: 'bar',
+            marker: {
+                color: '#2ecc71',  // Green for AC energy
+                line: {
+                    color: 'rgba(0,0,0,0.1)',
+                    width: 1
+                }
             },
-            domain: { x: [0.36, 0.64], y: [0, 1] }
-        },
-        {
-            type: "indicator",
-            mode: "gauge+number",
-            value: totalEnergy,
-            title: { text: "Total Energy (AC + DC)", font: { size: 14 } },
-            gauge: {
-                axis: { range: [0, totalEnergy + 20] },
-                bar: { color: "purple" },
-                borderwidth: 2
+            text: [`${totalEnergyAc.toFixed(1)} kWh (${((totalEnergyAc / totalEnergy) * 100).toFixed(0)}%)`],
+            textposition: 'inside',
+            insidetextfont: {
+                color: 'white',
+                size: 14
             },
-            domain: { x: [0.72, 1], y: [0, 1] }
+            hovertemplate: 'AC Energy: %{y:.1f} kWh<br>%{text}<extra></extra>'
         }
     ];
     
     const layout = {
+        title: {
+            text: 'Total Energy Consumption',
+            font: { size: 20, color: '#444', family: 'Roboto, sans-serif' }
+        },
+        barmode: 'stack',
         height: 280,
-        margin: { t: 25, b: 25, l: 25, r: 25 },
+        margin: { t: 60, b: 40, l: 70, r: 40 },
         template: plotlyTemplate,
-        autosize: true
+        yaxis: {
+            title: {
+                text: 'Energy (kWh)',
+                font: { size: 14 }
+            }
+        },
+        xaxis: {
+            tickfont: { size: 14 }
+        },
+        legend: {
+            orientation: 'h',
+            yanchor: 'bottom',
+            y: 1.02,
+            xanchor: 'center',
+            x: 0.5
+        },
+        annotations: [
+            {
+                x: 0,
+                y: totalEnergy,
+                text: `Total: ${totalEnergy.toFixed(1)} kWh`,
+                showarrow: true,
+                arrowhead: 0,
+                arrowsize: 1,
+                arrowwidth: 1,
+                arrowcolor: '#666',
+                ax: 0,
+                ay: -40,
+                font: {
+                    size: 14,
+                    color: '#444',
+                    weight: 'bold'
+                },
+                bgcolor: 'rgba(255, 255, 255, 0.8)',
+                bordercolor: '#ddd',
+                borderwidth: 1,
+                borderpad: 4,
+                opacity: 0.9
+            }
+        ]
     };
     
+    // Create the stacked bar chart
     Plotly.newPlot('total-energy-gauge', data, layout, {responsive: true});
+    
+    // Add additional information card below the chart
+    const gaugeContainer = document.getElementById('total-energy-gauge');
+    
+    // Check if the info card already exists, remove if it does
+    const existingInfo = gaugeContainer.querySelector('.energy-info-card');
+    if (existingInfo) {
+        existingInfo.remove();
+    }
+    
+    // Create info card
+    const infoCard = document.createElement('div');
+    infoCard.className = 'energy-info-card';
+    infoCard.style.display = 'flex';
+    infoCard.style.justifyContent = 'space-around';
+    infoCard.style.marginTop = '10px';
+    infoCard.style.padding = '10px';
+    infoCard.style.backgroundColor = '#f8f9fa';
+    infoCard.style.borderRadius = '8px';
+    infoCard.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+    
+    // Create energy stats
+    const createEnergyStat = (label, value, color, icon) => {
+        const stat = document.createElement('div');
+        stat.style.textAlign = 'center';
+        stat.style.padding = '10px';
+        
+        const iconEl = document.createElement('div');
+        iconEl.textContent = icon;
+        iconEl.style.fontSize = '24px';
+        iconEl.style.marginBottom = '5px';
+        
+        const valueEl = document.createElement('div');
+        valueEl.textContent = value;
+        valueEl.style.fontSize = '18px';
+        valueEl.style.fontWeight = 'bold';
+        valueEl.style.color = color;
+        
+        const labelEl = document.createElement('div');
+        labelEl.textContent = label;
+        labelEl.style.fontSize = '12px';
+        labelEl.style.color = '#777';
+        
+        stat.appendChild(iconEl);
+        stat.appendChild(valueEl);
+        stat.appendChild(labelEl);
+        
+        return stat;
+    };
+    
+    // Calculate averages and other interesting stats
+    const avgEnergyPerSession = sessions.length > 0 ? 
+        (totalEnergy / sessions.length).toFixed(1) + ' kWh' : '0 kWh';
+    
+    const dcPercentage = totalEnergy > 0 ? 
+        ((totalEnergyDc / totalEnergy) * 100).toFixed(0) + '%' : '0%';
+    
+    const acPercentage = totalEnergy > 0 ? 
+        ((totalEnergyAc / totalEnergy) * 100).toFixed(0) + '%' : '0%';
+    
+    // Add the stats to the card
+    infoCard.appendChild(createEnergyStat('Total Energy', totalEnergy.toFixed(1) + ' kWh', '#9c27b0', '⚡'));
+    infoCard.appendChild(createEnergyStat('Avg per Session', avgEnergyPerSession, '#2196f3', '📊'));
+    infoCard.appendChild(createEnergyStat('DC Charging', dcPercentage, '#3498db', '🔋'));
+    infoCard.appendChild(createEnergyStat('AC Charging', acPercentage, '#2ecc71', '🔌'));
+    
+    // Add the info card to the container
+    gaugeContainer.appendChild(infoCard);
 }
 
-// Update current km gauge
+// Update current km gauge with a modern card visualization
 function updateCurrentKmGauge() {
     if (sessions.length === 0) return;
     
     const startDate = startDateEl.value;
     const endDate = endDateEl.value;
-    let distance;
+    let distance, firstDate, lastDate, numSessions;
     
     if (startDate && endDate) {
         const filteredSessions = sessions.filter(s => {
@@ -369,148 +525,741 @@ function updateCurrentKmGauge() {
         if (filteredSessions.length > 0) {
             distance = Math.max(...filteredSessions.map(s => s.mileage)) - 
                       Math.min(...filteredSessions.map(s => s.mileage));
+            
+            // Get first and last date for the date range display
+            const sortedSessions = [...filteredSessions].sort((a, b) => 
+                new Date(a.start_time) - new Date(b.start_time)
+            );
+            firstDate = new Date(sortedSessions[0].start_time);
+            lastDate = new Date(sortedSessions[sortedSessions.length - 1].start_time);
+            numSessions = filteredSessions.length;
         } else {
             distance = 0;
+            firstDate = new Date(startDate);
+            lastDate = new Date(endDate);
+            numSessions = 0;
         }
     } else {
         distance = Math.max(...sessions.map(s => s.mileage));
+        // Get first and last date from all sessions
+        const sortedSessions = [...sessions].sort((a, b) => 
+            new Date(a.start_time) - new Date(b.start_time)
+        );
+        firstDate = new Date(sortedSessions[0].start_time);
+        lastDate = new Date(sortedSessions[sortedSessions.length - 1].start_time);
+        numSessions = sessions.length;
     }
     
     // Convert to miles if needed
     const displayDistance = useMiles ? distance * 0.621371 : distance;
-    const unitLabel = useMiles ? "Driven miles" : "Driven km";
+    const unitLabel = useMiles ? "miles" : "km";
     
-    const data = [{
-        type: "indicator",
-        mode: "gauge+number",
-        value: displayDistance,
-        title: { text: unitLabel, font: { size: 14 } },
-        gauge: {
-            axis: { range: [0, displayDistance] },
-            bar: { color: "orange" }
-        },
-        domain: { x: [0, 1], y: [0, 1] }
-    }];
+    // Calculate days between first and last session
+    const dayDiff = Math.ceil((lastDate - firstDate) / (1000 * 60 * 60 * 24));
     
-    const layout = {
-        height: 400,
-        width: 300,
-        template: plotlyTemplate
-    };
+    // Create a modern card visual instead of a gauge
+    const kmGaugeElement = document.getElementById('current-km-gauge');
+    kmGaugeElement.innerHTML = '';
     
-    Plotly.newPlot('current-km-gauge', data, layout);
+    // Create the card container
+    const card = document.createElement('div');
+    card.className = 'distance-card';
+    card.style.height = '100%';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.justifyContent = 'center';
+    card.style.alignItems = 'center';
+    card.style.padding = '20px';
+    card.style.backgroundColor = '#ffffff';
+    card.style.borderRadius = '10px';
+    card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+    card.style.position = 'relative';
+    card.style.overflow = 'hidden';
+    card.style.transition = 'transform 0.3s ease';
+    
+    // Add hover effect
+    card.onmouseover = () => card.style.transform = 'translateY(-5px)';
+    card.onmouseout = () => card.style.transform = 'translateY(0)';
+    
+    // Create the header section
+    const header = document.createElement('div');
+    header.style.width = '100%';
+    header.style.borderBottom = '1px solid #f0f0f0';
+    header.style.paddingBottom = '15px';
+    header.style.marginBottom = '15px';
+    header.style.textAlign = 'center';
+    
+    const title = document.createElement('h3');
+    title.textContent = 'Distance Covered';
+    title.style.margin = '0';
+    title.style.color = '#444';
+    title.style.fontSize = '18px';
+    header.appendChild(title);
+    
+    // Create the main distance display
+    const distanceContainer = document.createElement('div');
+    distanceContainer.style.display = 'flex';
+    distanceContainer.style.flexDirection = 'column';
+    distanceContainer.style.alignItems = 'center';
+    distanceContainer.style.margin = '20px 0';
+    
+    const distanceValue = document.createElement('div');
+    distanceValue.style.fontSize = '56px';
+    distanceValue.style.fontWeight = '700';
+    distanceValue.style.color = '#1f77b4';
+    distanceValue.style.lineHeight = '1';
+    distanceValue.style.background = 'linear-gradient(45deg, #1f77b4, #2ca8ff)';
+    distanceValue.style.WebkitBackgroundClip = 'text';
+    distanceValue.style.WebkitTextFillColor = 'transparent';
+    distanceValue.textContent = Math.round(displayDistance).toLocaleString();
+    
+    const distanceUnit = document.createElement('div');
+    distanceUnit.style.fontSize = '18px';
+    distanceUnit.style.color = '#777';
+    distanceUnit.style.marginTop = '5px';
+    distanceUnit.textContent = unitLabel;
+    
+    distanceContainer.appendChild(distanceValue);
+    distanceContainer.appendChild(distanceUnit);
+    
+    // Create additional stats container
+    const statsContainer = document.createElement('div');
+    statsContainer.style.display = 'grid';
+    statsContainer.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    statsContainer.style.gap = '15px';
+    statsContainer.style.width = '100%';
+    statsContainer.style.marginTop = '10px';
+    
+    // Function to create a stat item
+    function createStatItem(label, value, icon) {
+        const stat = document.createElement('div');
+        stat.style.display = 'flex';
+        stat.style.flexDirection = 'column';
+        stat.style.alignItems = 'center';
+        stat.style.backgroundColor = '#f8f9fa';
+        stat.style.padding = '12px';
+        stat.style.borderRadius = '8px';
+        
+        const iconElement = document.createElement('div');
+        iconElement.textContent = icon;
+        iconElement.style.fontSize = '20px';
+        iconElement.style.marginBottom = '5px';
+        
+        const valueElement = document.createElement('div');
+        valueElement.textContent = value;
+        valueElement.style.fontSize = '18px';
+        valueElement.style.fontWeight = '600';
+        valueElement.style.color = '#444';
+        
+        const labelElement = document.createElement('div');
+        labelElement.textContent = label;
+        labelElement.style.fontSize = '12px';
+        labelElement.style.color = '#777';
+        
+        stat.appendChild(iconElement);
+        stat.appendChild(valueElement);
+        stat.appendChild(labelElement);
+        
+        return stat;
+    }
+    
+    // Add stat items
+    statsContainer.appendChild(createStatItem('Time Period', dayDiff + ' days', '📅'));
+    statsContainer.appendChild(createStatItem('Sessions', numSessions, '🔌'));
+    
+    // Add date range info
+    const dateRange = document.createElement('div');
+    dateRange.style.marginTop = '20px';
+    dateRange.style.fontSize = '13px';
+    dateRange.style.color = '#666';
+    dateRange.style.textAlign = 'center';
+    dateRange.style.width = '100%';
+    dateRange.textContent = `${firstDate.toLocaleDateString()} - ${lastDate.toLocaleDateString()}`;
+    
+    // Assemble the card
+    card.appendChild(header);
+    card.appendChild(distanceContainer);
+    card.appendChild(statsContainer);
+    card.appendChild(dateRange);
+    
+    // Add the unit toggle button at the bottom
+    const toggleButton = document.createElement('button');
+    toggleButton.textContent = useMiles ? 'Switch to KM' : 'Switch to Miles';
+    toggleButton.style.marginTop = '20px';
+    toggleButton.style.padding = '8px 16px';
+    toggleButton.style.backgroundColor = '#1f77b4';
+    toggleButton.style.color = 'white';
+    toggleButton.style.border = 'none';
+    toggleButton.style.borderRadius = '5px';
+    toggleButton.style.cursor = 'pointer';
+    toggleButton.style.fontSize = '14px';
+    toggleButton.style.transition = 'background-color 0.2s';
+    toggleButton.addEventListener('mouseenter', () => { toggleButton.style.backgroundColor = '#155d8e'; });
+    toggleButton.addEventListener('mouseleave', () => { toggleButton.style.backgroundColor = '#1f77b4'; });
+    toggleButton.addEventListener('click', toggleUnits);
+    
+    card.appendChild(toggleButton);
+    
+    // Add card to the container
+    kmGaugeElement.appendChild(card);
 }
 
-// Create overall efficiency gauge
+// Create a modern overall efficiency visualization
 function createOverallEfficiencyGauge(efficiency) {
-    const data = [{
-        type: "indicator",
-        mode: "gauge+number",
-        value: efficiency * 100,
-        title: { text: "Overall Efficiency (%)", font: { size: 14 } },
-        gauge: {
-            axis: { range: [0, 100] },
-            bar: { color: "blue" }
-        },
-        domain: { x: [0, 1], y: [0, 1] }
-    }];
+    // Calculate the efficiency percentage
+    const efficiencyPercentage = efficiency * 100;
     
-    const layout = {
-        height: 300,
-        width: 300,
-        template: plotlyTemplate
-    };
+    // Create a custom radial gauge with gradient
+    const gaugeContainer = document.getElementById('overall-efficiency-gauge');
+    gaugeContainer.innerHTML = '';
     
-    Plotly.newPlot('overall-efficiency-gauge', data, layout);
+    // Create a modern circular gauge visualization
+    const card = document.createElement('div');
+    card.style.height = '100%';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.justifyContent = 'center';
+    card.style.alignItems = 'center';
+    card.style.backgroundColor = '#ffffff';
+    card.style.borderRadius = '10px';
+    card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+    card.style.position = 'relative';
+    card.style.padding = '20px';
+    card.style.transition = 'transform 0.3s ease';
+    
+    // Add hover effect
+    card.onmouseover = () => card.style.transform = 'translateY(-5px)';
+    card.onmouseout = () => card.style.transform = 'translateY(0)';
+    
+    // Create title
+    const title = document.createElement('h3');
+    title.textContent = 'Overall Charging Efficiency';
+    title.style.margin = '0 0 20px 0';
+    title.style.color = '#444';
+    title.style.fontSize = '18px';
+    title.style.textAlign = 'center';
+    
+    // Create gauge container
+    const gauge = document.createElement('div');
+    gauge.style.position = 'relative';
+    gauge.style.width = '200px';
+    gauge.style.height = '200px';
+    gauge.style.display = 'flex';
+    gauge.style.justifyContent = 'center';
+    gauge.style.alignItems = 'center';
+    
+    // Determine color based on efficiency
+    let gaugeColor = '#FF5E5E'; // Red for low efficiency
+    if (efficiencyPercentage >= 85) {
+        gaugeColor = '#4CAF50'; // Green for high efficiency
+    } else if (efficiencyPercentage >= 70) {
+        gaugeColor = '#FFC107'; // Yellow for medium efficiency
+    } else if (efficiencyPercentage >= 50) {
+        gaugeColor = '#FF9800'; // Orange for below average
+    }
+    
+    // Create SVG for circular gauge
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    
+    // Create background circle
+    const backgroundCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    backgroundCircle.setAttribute('cx', '50');
+    backgroundCircle.setAttribute('cy', '50');
+    backgroundCircle.setAttribute('r', '45');
+    backgroundCircle.setAttribute('fill', 'none');
+    backgroundCircle.setAttribute('stroke', '#f0f0f0');
+    backgroundCircle.setAttribute('stroke-width', '10');
+    
+    // Add gradient definition
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    const linearGradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+    linearGradient.setAttribute('id', 'efficiencyGradient');
+    linearGradient.setAttribute('x1', '0%');
+    linearGradient.setAttribute('y1', '0%');
+    linearGradient.setAttribute('x2', '100%');
+    linearGradient.setAttribute('y2', '100%');
+    
+    const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop1.setAttribute('offset', '0%');
+    stop1.setAttribute('stop-color', gaugeColor);
+    
+    const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop2.setAttribute('offset', '100%');
+    stop2.setAttribute('stop-color', shadeColor(gaugeColor, 30)); // Darker shade
+    
+    linearGradient.appendChild(stop1);
+    linearGradient.appendChild(stop2);
+    defs.appendChild(linearGradient);
+    svg.appendChild(defs);
+    
+    // Calculate circle values
+    const radius = 45;
+    const circumference = 2 * Math.PI * radius;
+    const progress = (100 - efficiencyPercentage) / 100 * circumference;
+    
+    // Create progress circle
+    const progressCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    progressCircle.setAttribute('cx', '50');
+    progressCircle.setAttribute('cy', '50');
+    progressCircle.setAttribute('r', '45');
+    progressCircle.setAttribute('fill', 'none');
+    progressCircle.setAttribute('stroke', 'url(#efficiencyGradient)');
+    progressCircle.setAttribute('stroke-width', '10');
+    progressCircle.setAttribute('stroke-dasharray', circumference);
+    progressCircle.setAttribute('stroke-dashoffset', progress);
+    progressCircle.setAttribute('transform', 'rotate(-90, 50, 50)');
+    progressCircle.style.transition = 'stroke-dashoffset 1s ease-in-out';
+    
+    svg.appendChild(backgroundCircle);
+    svg.appendChild(progressCircle);
+    gauge.appendChild(svg);
+    
+    // Add efficiency value in center
+    const valueContainer = document.createElement('div');
+    valueContainer.style.position = 'absolute';
+    valueContainer.style.display = 'flex';
+    valueContainer.style.flexDirection = 'column';
+    valueContainer.style.alignItems = 'center';
+    valueContainer.style.justifyContent = 'center';
+    
+    const value = document.createElement('div');
+    value.textContent = efficiencyPercentage.toFixed(1) + '%';
+    value.style.fontSize = '32px';
+    value.style.fontWeight = 'bold';
+    value.style.color = gaugeColor;
+    
+    const label = document.createElement('div');
+    label.textContent = 'Efficiency';
+    label.style.fontSize = '14px';
+    label.style.color = '#777';
+    
+    valueContainer.appendChild(value);
+    valueContainer.appendChild(label);
+    gauge.appendChild(valueContainer);
+    
+    // Create efficiency rating
+    const ratingContainer = document.createElement('div');
+    ratingContainer.style.marginTop = '20px';
+    ratingContainer.style.textAlign = 'center';
+    
+    let ratingText = '';
+    if (efficiencyPercentage >= 85) {
+        ratingText = 'Excellent';
+    } else if (efficiencyPercentage >= 75) {
+        ratingText = 'Very Good';
+    } else if (efficiencyPercentage >= 65) {
+        ratingText = 'Good';
+    } else if (efficiencyPercentage >= 55) {
+        ratingText = 'Average';
+    } else {
+        ratingText = 'Below Average';
+    }
+    
+    const rating = document.createElement('div');
+    rating.textContent = ratingText;
+    rating.style.fontWeight = 'bold';
+    rating.style.fontSize = '18px';
+    rating.style.color = gaugeColor;
+    rating.style.marginBottom = '5px';
+    
+    const explanation = document.createElement('div');
+    explanation.textContent = 'Energy transferred from grid to battery';
+    explanation.style.fontSize = '13px';
+    explanation.style.color = '#777';
+    
+    ratingContainer.appendChild(rating);
+    ratingContainer.appendChild(explanation);
+    
+    // Assemble the card
+    card.appendChild(title);
+    card.appendChild(gauge);
+    card.appendChild(ratingContainer);
+    
+    gaugeContainer.appendChild(card);
+    
+    // Helper function to darken a color
+    function shadeColor(color, percent) {
+        let R = parseInt(color.substring(1, 3), 16);
+        let G = parseInt(color.substring(3, 5), 16);
+        let B = parseInt(color.substring(5, 7), 16);
+
+        R = Math.round(R * (100 - percent) / 100);
+        G = Math.round(G * (100 - percent) / 100);
+        B = Math.round(B * (100 - percent) / 100);
+
+        R = (R < 255) ? R : 255;
+        G = (G < 255) ? G : 255;
+        B = (B < 255) ? B : 255;
+
+        const RR = ((R.toString(16).length == 1) ? '0' + R.toString(16) : R.toString(16));
+        const GG = ((G.toString(16).length == 1) ? '0' + G.toString(16) : G.toString(16));
+        const BB = ((B.toString(16).length == 1) ? '0' + B.toString(16) : B.toString(16));
+
+        return '#' + RR + GG + BB;
+    }
 }
 
-// Create power consumption gauges
+// Create power consumption visualization with modern bar charts
 function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
-    const data1 = [{
-        type: "indicator",
-        mode: "gauge+number",
-        value: consumption,
-        title: { text: "Avg Power Consumption (kWh/100km)", font: { size: 14 } },
-        gauge: {
-            axis: { range: [0, consumption] },
-            bar: { color: "green" }
-        },
-        domain: { x: [0, 1], y: [0, 1] }
-    }];
-    
-    const data2 = [{
-        type: "indicator",
-        mode: "gauge+number",
-        value: consumptionWithoutLosses,
-        title: { text: "Avg Consumption w/o Grid Losses (kWh/100km)", font: { size: 14 } },
-        gauge: {
-            axis: { range: [0, consumption] },
-            bar: { color: "purple" }
-        },
-        domain: { x: [0, 1], y: [0, 1] }
-    }];
+    // Convert to a modern bar chart comparison
+    const data = [
+        {
+            x: ['With Grid Losses', 'Without Grid Losses'],
+            y: [consumption, consumptionWithoutLosses],
+            type: 'bar',
+            marker: {
+                color: ['#6BD098', '#4A90E2'],
+                line: {
+                    color: 'rgba(0,0,0,0.1)',
+                    width: 1
+                }
+            },
+            text: [
+                consumption.toFixed(1) + ' kWh/100km',
+                consumptionWithoutLosses.toFixed(1) + ' kWh/100km'
+            ],
+            textposition: 'none',  // Hide the automatic text display to avoid overlap
+            hoverinfo: 'y+text',
+            hovertemplate: '%{y:.1f} kWh/100km<extra></extra>', // Custom hover template
+            textfont: {
+                size: 14,
+                color: '#333'
+            }
+        }
+    ];
     
     const layout = {
+        title: {
+            text: 'Power Consumption Comparison',
+            font: { size: 20, color: '#444', family: 'Roboto, sans-serif' }
+        },
         height: 300,
-        width: 300,
-        template: plotlyTemplate
+        margin: { t: 60, b: 80, l: 70, r: 40 },
+        template: plotlyTemplate,
+        yaxis: {
+            title: {
+                text: 'kWh/100km',
+                font: { size: 14 }
+            },
+            range: [0, Math.max(consumption, consumptionWithoutLosses) * 1.2]
+        },
+        xaxis: {
+            tickangle: 0,
+            tickfont: { size: 14 }
+        },
+        annotations: [
+            {
+                x: 0,
+                y: consumption,
+                text: consumption.toFixed(1) + ' kWh/100km', // Include units in the annotation
+                showarrow: false,
+                yshift: 15, // Move above the bar instead of inside it
+                font: { size: 14, color: '#333', weight: 'bold' }
+            },
+            {
+                x: 1,
+                y: consumptionWithoutLosses,
+                text: consumptionWithoutLosses.toFixed(1) + ' kWh/100km', // Include units in the annotation
+                showarrow: false,
+                yshift: 15, // Move above the bar instead of inside it
+                font: { size: 14, color: '#333', weight: 'bold' }
+            }
+        ]
     };
     
-    Plotly.newPlot('power-consumption-gauge', data1, layout);
-    Plotly.newPlot('power-consumption-without-grid-losses-gauge', data2, layout);
+    // Calculate the percentage saved
+    const savingsPercentage = ((consumption - consumptionWithoutLosses) / consumption * 100).toFixed(1);
+    
+    // Combine both gauges into a single visualization
+    Plotly.newPlot('power-consumption-gauge', data, layout);
+    
+    // Add custom HTML to the second gauge container to display savings
+    const efficiencyContainer = document.getElementById('power-consumption-without-grid-losses-gauge');
+    efficiencyContainer.innerHTML = '';
+    
+    // Create a modern card to display the savings
+    const savingsCard = document.createElement('div');
+    savingsCard.style.height = '100%';
+    savingsCard.style.display = 'flex';
+    savingsCard.style.flexDirection = 'column';
+    savingsCard.style.justifyContent = 'center';
+    savingsCard.style.alignItems = 'center';
+    savingsCard.style.backgroundColor = '#ffffff';
+    savingsCard.style.borderRadius = '10px';
+    savingsCard.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+    savingsCard.style.padding = '20px';
+    savingsCard.style.transition = 'transform 0.3s ease';
+    
+    // Add hover effect
+    savingsCard.onmouseover = () => savingsCard.style.transform = 'translateY(-5px)';
+    savingsCard.onmouseout = () => savingsCard.style.transform = 'translateY(0)';
+    
+    // Create header
+    const header = document.createElement('h3');
+    header.textContent = 'Charging Energy Overhead';
+    header.style.margin = '0 0 20px 0';
+    header.style.color = '#444';
+    header.style.fontSize = '18px';
+    header.style.textAlign = 'center';
+    
+    // Create savings value display
+    const savingsValueContainer = document.createElement('div');
+    savingsValueContainer.style.textAlign = 'center';
+    savingsValueContainer.style.marginBottom = '10px';
+    
+    const savingsValue = document.createElement('div');
+    savingsValue.style.fontSize = '64px';
+    savingsValue.style.fontWeight = 'bold';
+    savingsValue.style.background = 'linear-gradient(45deg, #4A90E2, #6BD098)';
+    savingsValue.style.WebkitBackgroundClip = 'text';
+    savingsValue.style.WebkitTextFillColor = 'transparent';
+    savingsValue.style.lineHeight = '1';
+    savingsValue.textContent = savingsPercentage + '%';
+    
+    const savingsLabel = document.createElement('div');
+    savingsLabel.textContent = 'Energy overhead from grid losses';
+    savingsLabel.style.fontSize = '14px';
+    savingsLabel.style.color = '#777';
+    savingsLabel.style.marginTop = '10px';
+    
+    savingsValueContainer.appendChild(savingsValue);
+    savingsValueContainer.appendChild(savingsLabel);
+    
+    // Create data comparison
+    const comparisonContainer = document.createElement('div');
+    comparisonContainer.style.marginTop = '20px';
+    comparisonContainer.style.width = '100%';
+    comparisonContainer.style.padding = '0 20px';
+    
+    const comparisonTable = document.createElement('table');
+    comparisonTable.style.width = '100%';
+    comparisonTable.style.borderCollapse = 'collapse';
+    comparisonTable.style.fontSize = '14px';
+    
+    // Add rows to the comparison table
+    const rows = [
+        { label: 'With Grid Losses', value: consumption.toFixed(1) + ' kWh/100km', color: '#6BD098' },
+        { label: 'Without Grid Losses', value: consumptionWithoutLosses.toFixed(1) + ' kWh/100km', color: '#4A90E2' },
+        { label: 'Energy Overhead', value: (consumption - consumptionWithoutLosses).toFixed(1) + ' kWh/100km', color: '#FF9F43' }
+    ];
+    
+    rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #f0f0f0';
+        
+        const tdLabel = document.createElement('td');
+        tdLabel.textContent = row.label;
+        tdLabel.style.padding = '10px 0';
+        tdLabel.style.color = '#555';
+        
+        const tdValue = document.createElement('td');
+        tdValue.textContent = row.value;
+        tdValue.style.padding = '10px 0';
+        tdValue.style.textAlign = 'right';
+        tdValue.style.fontWeight = 'bold';
+        tdValue.style.color = row.color;
+        
+        tr.appendChild(tdLabel);
+        tr.appendChild(tdValue);
+        comparisonTable.appendChild(tr);
+    });
+    
+    comparisonContainer.appendChild(comparisonTable);
+    
+    // Add a note about efficiency calculation
+    const note = document.createElement('div');
+    note.textContent = 'Note: Grid losses include AC/DC conversion inefficiency, heat generation, and energy used for preconditioning while charging';
+    note.style.fontSize = '12px';
+    note.style.color = '#999';
+    note.style.marginTop = '20px';
+    note.style.textAlign = 'center';
+    
+    // Assemble the card
+    savingsCard.appendChild(header);
+    savingsCard.appendChild(savingsValueContainer);
+    savingsCard.appendChild(comparisonContainer);
+    savingsCard.appendChild(note);
+    
+    efficiencyContainer.appendChild(savingsCard);
 }
 
-// Create session stats gauges
+// Create modern session stats visualization
 function createSessionStatsGauges(sessionStats) {
     const totalSessions = sessionStats.total_sessions;
     const failedSessions = sessionStats.total_failed_sessions;
     const successfulSessions = sessionStats.total_successful_sessions;
+    const successRate = totalSessions > 0 ? (successfulSessions / totalSessions) * 100 : 0;
     
-    const totalData = [{
-        type: "indicator",
-        mode: "gauge+number",
-        value: totalSessions,
-        title: { text: "Total Sessions", font: { size: 14 } },
-        gauge: {
-            axis: { range: [0, totalSessions] },
-            bar: { color: "blue" }
+    // Create a pie chart for the total sessions container
+    const data = [{
+        values: [successfulSessions, failedSessions],
+        labels: ['Successful', 'Failed'],
+        type: 'pie',
+        hole: 0.7,
+        marker: {
+            colors: ['#66BB6A', '#EF5350']
         },
-        domain: { x: [0, 1], y: [0, 1] }
-    }];
-    
-    const failedData = [{
-        type: "indicator",
-        mode: "gauge+number",
-        value: failedSessions,
-        title: { text: "Failed Sessions", font: { size: 14 } },
-        gauge: {
-            axis: { range: [0, totalSessions] },
-            bar: { color: "red" }
+        textinfo: 'percent',
+        insidetextfont: {
+            color: '#FFFFFF',
+            size: 14
         },
-        domain: { x: [0, 1], y: [0, 1] }
-    }];
-    
-    const successfulData = [{
-        type: "indicator",
-        mode: "gauge+number",
-        value: successfulSessions,
-        title: { text: "Successful Sessions", font: { size: 14 } },
-        gauge: {
-            axis: { range: [0, totalSessions] },
-            bar: { color: "green" }
-        },
-        domain: { x: [0, 1], y: [0, 1] }
+        hoverinfo: 'label+value+percent',
+        textposition: 'inside'
     }];
     
     const layout = {
+        title: {
+            text: 'Charging Sessions Overview',
+            font: { size: 18, color: '#444' }
+        },
         height: 300,
-        width: 300,
+        showlegend: true,
+        legend: {
+            orientation: 'h',
+            x: 0.5,
+            y: -0.2,
+            xanchor: 'center'
+        },
+        annotations: [{
+            font: {
+                size: 20,
+                color: '#444'
+            },
+            showarrow: false,
+            text: totalSessions,
+            x: 0.5,
+            y: 0.5
+        },
+        {
+            font: {
+                size: 14,
+                color: '#777'
+            },
+            showarrow: false,
+            text: 'TOTAL',
+            x: 0.5,
+            y: 0.38
+        }],
         template: plotlyTemplate
     };
     
-    Plotly.newPlot('total-sessions-gauge', totalData, layout);
-    Plotly.newPlot('failed-sessions-gauge', failedData, layout);
-    Plotly.newPlot('successful-sessions-gauge', successfulData, layout);
+    Plotly.newPlot('total-sessions-gauge', data, layout);
+    
+    // Create modern cards for failed and successful sessions
+    createSessionStatCard('failed-sessions-gauge', failedSessions, totalSessions, 'Failed Sessions', '#EF5350', '❌');
+    createSessionStatCard('successful-sessions-gauge', successfulSessions, totalSessions, 'Successful Sessions', '#66BB6A', '✅');
+    
+    // Helper function to create a modern stat card
+    function createSessionStatCard(elementId, value, total, title, color, icon) {
+        const container = document.getElementById(elementId);
+        container.innerHTML = '';
+        
+        // Create the card
+        const card = document.createElement('div');
+        card.style.height = '100%';
+        card.style.backgroundColor = '#ffffff';
+        card.style.borderRadius = '10px';
+        card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        card.style.padding = '20px';
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'center';
+        card.style.justifyContent = 'center';
+        card.style.transition = 'transform 0.3s ease';
+        
+        // Add hover effect
+        card.onmouseover = () => card.style.transform = 'translateY(-5px)';
+        card.onmouseout = () => card.style.transform = 'translateY(0)';
+        
+        // Create an icon for the card
+        const iconElement = document.createElement('div');
+        iconElement.textContent = icon;
+        iconElement.style.fontSize = '36px';
+        iconElement.style.marginBottom = '10px';
+        
+        // Create title
+        const titleElement = document.createElement('h3');
+        titleElement.textContent = title;
+        titleElement.style.margin = '0 0 15px 0';
+        titleElement.style.fontSize = '18px';
+        titleElement.style.color = '#444';
+        titleElement.style.textAlign = 'center';
+        
+        // Create value container
+        const valueContainer = document.createElement('div');
+        valueContainer.style.display = 'flex';
+        valueContainer.style.flexDirection = 'column';
+        valueContainer.style.alignItems = 'center';
+        
+        // Create main value
+        const valueElement = document.createElement('div');
+        valueElement.textContent = value;
+        valueElement.style.fontSize = '48px';
+        valueElement.style.fontWeight = 'bold';
+        valueElement.style.color = color;
+        valueElement.style.lineHeight = '1';
+        
+        // Create percentage
+        const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+        const percentageElement = document.createElement('div');
+        percentageElement.textContent = `${percentage}% of total`;
+        percentageElement.style.marginTop = '5px';
+        percentageElement.style.fontSize = '14px';
+        percentageElement.style.color = '#777';
+        
+        valueContainer.appendChild(valueElement);
+        valueContainer.appendChild(percentageElement);
+        
+        // Create progress bar container
+        const progressContainer = document.createElement('div');
+        progressContainer.style.width = '100%';
+        progressContainer.style.marginTop = '20px';
+        
+        // Create progress background
+        const progressBackground = document.createElement('div');
+        progressBackground.style.width = '100%';
+        progressBackground.style.height = '6px';
+        progressBackground.style.backgroundColor = '#f0f0f0';
+        progressBackground.style.borderRadius = '3px';
+        progressBackground.style.overflow = 'hidden';
+        
+        // Create progress fill
+        const progressFill = document.createElement('div');
+        progressFill.style.width = `${percentage}%`;
+        progressFill.style.height = '100%';
+        progressFill.style.backgroundColor = color;
+        progressFill.style.borderRadius = '3px';
+        progressFill.style.transition = 'width 1s ease-in-out';
+        
+        progressBackground.appendChild(progressFill);
+        progressContainer.appendChild(progressBackground);
+        
+        // Assemble the card
+        card.appendChild(iconElement);
+        card.appendChild(titleElement);
+        card.appendChild(valueContainer);
+        card.appendChild(progressContainer);
+        
+        // Add more context based on the card type
+        const contextElement = document.createElement('div');
+        contextElement.style.marginTop = '20px';
+        contextElement.style.fontSize = '13px';
+        contextElement.style.color = '#777';
+        contextElement.style.textAlign = 'center';
+        
+        if (title.includes('Failed')) {
+            contextElement.textContent = 'Sessions where charging was interrupted or unsuccessful';
+        } else {
+            contextElement.textContent = 'Sessions completed successfully to desired charge level';
+        }
+        
+        card.appendChild(contextElement);
+        container.appendChild(card);
+    }
 }
 
 // Update providers lists
@@ -1507,65 +2256,363 @@ function createChargeDetailsGraph() {
     Plotly.newPlot('charge-details-graph', data, layout);
 }
 
-// Create combined gauges
+// Create modern session stats cards
 function createCombinedGauges() {
     if (!currentSession || !sessions.length) return;
     
-    // Find max values for gauge ranges
+    // Get the container element
+    const container = document.getElementById('combined-gauges');
+    container.innerHTML = '';
+    
+    // Create a modern card layout
+    const cardContainer = document.createElement('div');
+    cardContainer.style.display = 'grid';
+    cardContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(200px, 1fr))';
+    cardContainer.style.gap = '20px';
+    cardContainer.style.padding = '20px';
+    cardContainer.style.height = '100%';
+    cardContainer.style.backgroundColor = '#ffffff';
+    cardContainer.style.borderRadius = '15px';
+    cardContainer.style.boxShadow = '0 5px 15px rgba(0, 0, 0, 0.05)';
+    
+    // Find max values for comparison
     const maxPower = Math.max(...sessions.map(s => s.avg_power));
     const maxCost = Math.max(...sessions.map(s => s.cost));
     const maxEnergy = Math.max(...sessions.map(s => s.energy_added_hvb));
     const maxTime = Math.max(...sessions.map(s => s.session_time_minutes));
     
-    const data = [
+    // Define session metrics
+    const metrics = [
         {
-            type: "indicator",
-            mode: "gauge+number",
-            value: currentSession.avg_power,
-            title: { text: "Average Grid Power (kW)", font: { size: 14 } },
-            gauge: { axis: { range: [0, maxPower] }, bar: { color: "darkblue" } },
-            domain: { x: [0, 0.45], y: [0.6, 1] }
+            label: "Average Grid Power",
+            value: currentSession.avg_power.toFixed(1),
+            unit: "kW",
+            icon: "⚡",
+            color: "#3498db",
+            max: maxPower,
+            percentOfMax: (currentSession.avg_power / maxPower) * 100
         },
         {
-            type: "indicator",
-            mode: "gauge+number",
-            value: currentSession.cost,
-            title: { text: "Cost (€)", font: { size: 14 } },
-            gauge: { axis: { range: [0, maxCost] }, bar: { color: "green" } },
-            domain: { x: [0.55, 1], y: [0.6, 1] }
+            label: "Cost",
+            value: currentSession.cost.toFixed(2),
+            unit: "€",
+            icon: "💶",
+            color: "#2ecc71",
+            max: maxCost,
+            percentOfMax: (currentSession.cost / maxCost) * 100
         },
         {
-            type: "indicator",
-            mode: "gauge+number",
-            value: currentSession.efficiency * 100,
-            title: { text: "Efficiency (%)", font: { size: 14 } },
-            gauge: { axis: { range: [0, 100] }, bar: { color: "orange" } },
-            domain: { x: [0, 0.45], y: [0.2, 0.6] }
+            label: "Efficiency",
+            value: (currentSession.efficiency * 100).toFixed(1),
+            unit: "%",
+            icon: "🔋",
+            color: "#f39c12",
+            max: 100,
+            percentOfMax: currentSession.efficiency * 100
         },
         {
-            type: "indicator",
-            mode: "gauge+number",
-            value: currentSession.energy_added_hvb,
-            title: { text: "Energy Added (kWh)", font: { size: 14 } },
-            gauge: { axis: { range: [0, maxEnergy] }, bar: { color: "purple" } },
-            domain: { x: [0.55, 1], y: [0.2, 0.6] }
+            label: "Energy Added",
+            value: currentSession.energy_added_hvb.toFixed(1),
+            unit: "kWh",
+            icon: "⚡",
+            color: "#9b59b6",
+            max: maxEnergy,
+            percentOfMax: (currentSession.energy_added_hvb / maxEnergy) * 100
         },
         {
-            type: "indicator",
-            mode: "gauge+number",
-            value: currentSession.session_time_minutes,
-            title: { text: "Session Time (minutes)", font: { size: 14 } },
-            gauge: { axis: { range: [0, maxTime] }, bar: { color: "red" } },
-            domain: { x: [0.25, 0.75], y: [0, 0.2] }
+            label: "Session Time",
+            value: Math.round(currentSession.session_time_minutes),
+            unit: "min",
+            icon: "⏱️",
+            color: "#e74c3c",
+            max: maxTime,
+            percentOfMax: (currentSession.session_time_minutes / maxTime) * 100
         }
     ];
     
-    const layout = {
-        height: 800,
-        template: plotlyTemplate
-    };
+    // Create a card for each metric
+    metrics.forEach(metric => {
+        const card = createMetricCard(metric);
+        cardContainer.appendChild(card);
+    });
     
-    Plotly.newPlot('combined-gauges', data, layout);
+    // Add additional session info card
+    const additionalInfo = createAdditionalInfoCard();
+    cardContainer.appendChild(additionalInfo);
+    
+    // Add to the container
+    container.appendChild(cardContainer);
+    
+    // Helper function to create a metric card
+    function createMetricCard(metric) {
+        const card = document.createElement('div');
+        card.className = 'session-metric-card';
+        card.style.backgroundColor = '#ffffff';
+        card.style.borderRadius = '12px';
+        card.style.padding = '20px';
+        card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'center';
+        card.style.justifyContent = 'space-between';
+        card.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
+        card.style.position = 'relative';
+        card.style.overflow = 'hidden';
+        
+        // Add hover effect
+        card.onmouseover = () => {
+            card.style.transform = 'translateY(-5px)';
+            card.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)';
+        };
+        card.onmouseout = () => {
+            card.style.transform = 'translateY(0)';
+            card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        };
+        
+        // Create icon
+        const icon = document.createElement('div');
+        icon.textContent = metric.icon;
+        icon.style.fontSize = '28px';
+        icon.style.marginBottom = '10px';
+        icon.style.backgroundColor = `${metric.color}15`; // Light background based on color
+        icon.style.width = '50px';
+        icon.style.height = '50px';
+        icon.style.borderRadius = '50%';
+        icon.style.display = 'flex';
+        icon.style.justifyContent = 'center';
+        icon.style.alignItems = 'center';
+        
+        // Create label
+        const label = document.createElement('div');
+        label.textContent = metric.label;
+        label.style.fontSize = '14px';
+        label.style.color = '#666';
+        label.style.marginBottom = '15px';
+        label.style.textAlign = 'center';
+        
+        // Create value container
+        const valueContainer = document.createElement('div');
+        valueContainer.style.display = 'flex';
+        valueContainer.style.alignItems = 'baseline';
+        valueContainer.style.marginBottom = '15px';
+        
+        // Create value
+        const value = document.createElement('div');
+        value.textContent = metric.value;
+        value.style.fontSize = '32px';
+        value.style.fontWeight = 'bold';
+        value.style.color = metric.color;
+        
+        // Create unit
+        const unit = document.createElement('div');
+        unit.textContent = metric.unit;
+        unit.style.fontSize = '14px';
+        unit.style.color = '#999';
+        unit.style.marginLeft = '5px';
+        
+        valueContainer.appendChild(value);
+        valueContainer.appendChild(unit);
+        
+        // Create progress bar container
+        const progressContainer = document.createElement('div');
+        progressContainer.style.width = '100%';
+        progressContainer.style.height = '6px';
+        progressContainer.style.backgroundColor = '#f0f0f0';
+        progressContainer.style.borderRadius = '3px';
+        progressContainer.style.overflow = 'hidden';
+        progressContainer.style.marginTop = '5px';
+        
+        // Create progress bar
+        const progress = document.createElement('div');
+        progress.style.width = `${metric.percentOfMax}%`;
+        progress.style.height = '100%';
+        progress.style.backgroundColor = metric.color;
+        progress.style.borderRadius = '3px';
+        progress.style.transition = 'width 1s ease';
+        
+        progressContainer.appendChild(progress);
+        
+        // Create comparison text
+        const comparison = document.createElement('div');
+        comparison.textContent = `${metric.percentOfMax.toFixed(0)}% of max (${metric.max.toFixed(1)} ${metric.unit})`;
+        comparison.style.fontSize = '10px';
+        comparison.style.color = '#999';
+        comparison.style.marginTop = '5px';
+        comparison.style.textAlign = 'right';
+        
+        // Assemble the card
+        card.appendChild(icon);
+        card.appendChild(label);
+        card.appendChild(valueContainer);
+        card.appendChild(progressContainer);
+        card.appendChild(comparison);
+        
+        return card;
+    }
+    
+    // Helper function to create additional info card
+    function createAdditionalInfoCard() {
+        const card = document.createElement('div');
+        card.className = 'session-info-card';
+        card.style.backgroundColor = '#ffffff';
+        card.style.borderRadius = '12px';
+        card.style.padding = '20px';
+        card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
+        
+        // Add hover effect
+        card.onmouseover = () => {
+            card.style.transform = 'translateY(-5px)';
+            card.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)';
+        };
+        card.onmouseout = () => {
+            card.style.transform = 'translateY(0)';
+            card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        };
+        
+        // Create header
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.marginBottom = '15px';
+        
+        const icon = document.createElement('span');
+        icon.textContent = '📊';
+        icon.style.fontSize = '24px';
+        icon.style.marginRight = '10px';
+        
+        const title = document.createElement('h4');
+        title.textContent = 'Session Details';
+        title.style.margin = '0';
+        title.style.fontSize = '16px';
+        title.style.color = '#444';
+        
+        header.appendChild(icon);
+        header.appendChild(title);
+        
+        // Create content
+        const content = document.createElement('div');
+        
+        // Format date and time
+        const startDate = new Date(currentSession.start_time);
+        const endDate = new Date(currentSession.end_time);
+        const dateOptions = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
+        const timeOptions = { hour: '2-digit', minute: '2-digit' };
+        
+        const formattedDate = startDate.toLocaleDateString(undefined, dateOptions);
+        const formattedStartTime = startDate.toLocaleTimeString(undefined, timeOptions);
+        const formattedEndTime = endDate.toLocaleTimeString(undefined, timeOptions);
+        
+        // Create info items
+        const infoItems = [
+            { label: "Date", value: formattedDate },
+            { label: "Time", value: `${formattedStartTime} - ${formattedEndTime}` },
+            { label: "Location", value: currentSession.location || "Unknown" },
+            { label: "SoC Change", value: `${currentSession.soc_start}% → ${currentSession.soc_end}%` }
+        ];
+        
+        // Create a table for info items
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        
+        infoItems.forEach(item => {
+            const row = document.createElement('tr');
+            
+            const labelCell = document.createElement('td');
+            labelCell.textContent = item.label;
+            labelCell.style.padding = '5px 0';
+            labelCell.style.color = '#666';
+            labelCell.style.fontSize = '14px';
+            
+            const valueCell = document.createElement('td');
+            valueCell.textContent = item.value;
+            valueCell.style.padding = '5px 0';
+            valueCell.style.textAlign = 'right';
+            valueCell.style.fontWeight = '500';
+            valueCell.style.color = '#333';
+            valueCell.style.fontSize = '14px';
+            
+            row.appendChild(labelCell);
+            row.appendChild(valueCell);
+            table.appendChild(row);
+        });
+        
+        content.appendChild(table);
+        
+        // Add SOC progress bar
+        const socProgressContainer = document.createElement('div');
+        socProgressContainer.style.marginTop = '15px';
+        
+        const socLabel = document.createElement('div');
+        socLabel.textContent = 'Charge Progress';
+        socLabel.style.fontSize = '14px';
+        socLabel.style.color = '#666';
+        socLabel.style.marginBottom = '5px';
+        
+        const socBarContainer = document.createElement('div');
+        socBarContainer.style.height = '20px';
+        socBarContainer.style.backgroundColor = '#f0f0f0';
+        socBarContainer.style.borderRadius = '10px';
+        socBarContainer.style.position = 'relative';
+        socBarContainer.style.overflow = 'hidden';
+        
+        const startBar = document.createElement('div');
+        startBar.style.position = 'absolute';
+        startBar.style.left = '0';
+        startBar.style.top = '0';
+        startBar.style.width = `${currentSession.soc_start}%`;
+        startBar.style.height = '100%';
+        startBar.style.backgroundColor = '#FFB74D'; // Orange for start
+        
+        const endBar = document.createElement('div');
+        endBar.style.position = 'absolute';
+        endBar.style.left = '0';
+        endBar.style.top = '0';
+        endBar.style.width = `${currentSession.soc_end}%`;
+        endBar.style.height = '100%';
+        endBar.style.backgroundColor = '#4CAF50'; // Green for end
+        endBar.style.transition = 'width 1s ease-in-out';
+        
+        // Add values on the progress bar
+        const startValue = document.createElement('span');
+        startValue.textContent = `${currentSession.soc_start}%`;
+        startValue.style.position = 'absolute';
+        startValue.style.left = `${Math.min(Math.max(currentSession.soc_start - 10, 0), 90)}%`;
+        startValue.style.top = '0';
+        startValue.style.fontSize = '12px';
+        startValue.style.fontWeight = 'bold';
+        startValue.style.color = '#fff';
+        startValue.style.padding = '2px 5px';
+        
+        const endValue = document.createElement('span');
+        endValue.textContent = `${currentSession.soc_end}%`;
+        endValue.style.position = 'absolute';
+        endValue.style.right = `${Math.min(Math.max(100 - currentSession.soc_end - 10, 0), 90)}%`;
+        endValue.style.top = '0';
+        endValue.style.fontSize = '12px';
+        endValue.style.fontWeight = 'bold';
+        endValue.style.color = '#fff';
+        endValue.style.padding = '2px 5px';
+        
+        // Assemble SOC progress bar
+        socBarContainer.appendChild(startBar);
+        socBarContainer.appendChild(endBar);
+        socBarContainer.appendChild(startValue);
+        socBarContainer.appendChild(endValue);
+        
+        socProgressContainer.appendChild(socLabel);
+        socProgressContainer.appendChild(socBarContainer);
+        
+        // Assemble the card
+        card.appendChild(header);
+        card.appendChild(content);
+        card.appendChild(socProgressContainer);
+        
+        return card;
+    }
 }
 
 // Create grid power graph
