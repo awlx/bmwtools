@@ -2567,14 +2567,24 @@ function createCombinedGauges() {
         startBar.style.height = '100%';
         startBar.style.backgroundColor = '#FFB74D'; // Orange for start
         
+        // Create a difference bar to show the charging progress with a different color
+        const diffBar = document.createElement('div');
+        diffBar.style.position = 'absolute';
+        diffBar.style.left = `${currentSession.soc_start}%`;
+        diffBar.style.top = '0';
+        diffBar.style.width = `${currentSession.soc_end - currentSession.soc_start}%`;
+        diffBar.style.height = '100%';
+        diffBar.style.backgroundColor = '#3498db'; // Blue for the difference
+        diffBar.style.transition = 'width 1s ease-in-out';
+        
+        // Keep the end bar for reference but make it transparent
         const endBar = document.createElement('div');
         endBar.style.position = 'absolute';
         endBar.style.left = '0';
         endBar.style.top = '0';
-        endBar.style.width = `${currentSession.soc_end}%`;
+        endBar.style.width = '0'; // No width needed as we're showing the difference separately
         endBar.style.height = '100%';
-        endBar.style.backgroundColor = '#4CAF50'; // Green for end
-        endBar.style.transition = 'width 1s ease-in-out';
+        endBar.style.backgroundColor = 'transparent'; // Make it transparent
         
         // Add values on the progress bar
         const startValue = document.createElement('span');
@@ -2599,6 +2609,7 @@ function createCombinedGauges() {
         
         // Assemble SOC progress bar
         socBarContainer.appendChild(startBar);
+        socBarContainer.appendChild(diffBar); // Add the difference bar
         socBarContainer.appendChild(endBar);
         socBarContainer.appendChild(startValue);
         socBarContainer.appendChild(endValue);
