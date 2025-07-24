@@ -72,13 +72,20 @@ h1 {
 .file-label {
     width: 100%;
     height: 100%;
-    border: 1px dashed #1f77b4;
+    border: 2px dashed #1f77b4;
     border-radius: 5px;
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
     text-align: center;
+    transition: all 0.3s ease;
+    background-size: cover;
+}
+
+.file-label:hover {
+    background-color: #e6f3ff;
+    border-style: solid;
 }
 
 .button {
