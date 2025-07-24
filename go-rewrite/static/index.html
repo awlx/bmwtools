@@ -29,10 +29,17 @@
                 
             function loadResources(version) {
                 // Create and append CSS link with version
+                // Load main CSS
                 const cssLink = document.createElement('link');
                 cssLink.rel = 'stylesheet';
                 cssLink.href = `/static/css/styles.css?v=${version}`;
                 document.head.appendChild(cssLink);
+                
+                // Load navigation CSS
+                const navCssLink = document.createElement('link');
+                navCssLink.rel = 'stylesheet';
+                navCssLink.href = `/static/css/nav.css?v=${version}`;
+                document.head.appendChild(navCssLink);
                 
                 // Store version for later use when loading JS
                 window.APP_CACHE_VERSION = version;
@@ -44,6 +51,13 @@
     <div class="container">
         <header>
             <h1>BMW CarData - Charging Session Dashboard</h1>
+            <nav class="main-nav">
+                <ul>
+                    <li class="active"><a href="/">Dashboard</a></li>
+                    <li><a href="/stats">Anonymous Stats</a></li>
+                    <li><a href="/battery">Fleet Battery Health</a></li>
+                </ul>
+            </nav>
             <div id="disclaimer" class="disclaimer"></div>
             <div id="energy-data-warning" class="warning"></div>
         </header>
@@ -54,6 +68,30 @@
                 <label for="upload-json" class="file-label">
                     Drag and Drop or Select your CarData JSON file (BMW-CarData-Ladehistorie_*.json)
                 </label>
+            </div>
+            <div class="consent-checkbox">
+                <input type="checkbox" id="fleet-stats-consent" name="fleet-stats-consent">
+                <label for="fleet-stats-consent">
+                    I agree to anonymously share my charging data for fleet-wide battery health and charging provider statistics 
+                    <span class="tooltip" title="Your data is fully anonymized. No vehicle identification number (FIN), no location data, and no personal information is stored in any way, shape, or form. Only provider names, charging amounts (kWh), charging success/failure status, and battery State of Health metrics are collected for statistical purposes.">ⓘ</span>
+                </label>
+                <div id="model-selector" style="display: none; margin-top: 10px;">
+                    <label for="bmw-model">Select BMW BEV Model:</label>
+                    <select id="bmw-model" name="bmw-model" required>
+                        <option value="">Please select a model (required)</option>
+                        <option value="BMW i3">BMW i3</option>
+                        <option value="BMW i4">BMW i4</option>
+                        <option value="BMW iX">BMW iX</option>
+                        <option value="BMW iX1">BMW iX1</option>
+                        <option value="BMW iX3">BMW iX3</option>
+                        <option value="BMW i5">BMW i5</option>
+                        <option value="BMW i7">BMW i7</option>
+                        <option value="Mini Cooper SE">Mini Cooper SE</option>
+                        <option value="BMW CE 04">BMW CE 04 (Scooter)</option>
+                        <option value="BMW CE 02">BMW CE 02 (Scooter)</option>
+                        <option value="Other BMW EV">Other BMW EV</option>
+                    </select>
+                </div>
             </div>
             <button id="load-demo-data" class="button">Load Demo Data</button>
         </section>

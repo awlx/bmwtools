@@ -1,6 +1,10 @@
 # Build stage
 FROM golang:1.22-alpine AS builder
 
+# Install build dependencies including gcc and required libraries
+RUN apk update && apk add --no-cache gcc g++ make musl-dev libc-dev sqlite-dev && \
+    gcc --version
+
 WORKDIR /app
 
 # Copy go mod and sum files
@@ -13,10 +17,13 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bmwtools-server ./cmd/server/main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o bmwtools-server ./cmd/server/main.go
 
 # Final stage
 FROM alpine:latest
+
+# Add runtime dependencies if any CGO-compiled libraries are needed
+RUN apk add --no-cache sqlite-libs
 
 WORKDIR /app
 

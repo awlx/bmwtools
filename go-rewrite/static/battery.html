@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMW CarData - Fleet Battery Health</title>
+    <!-- CSS will be loaded dynamically with cache busting -->
+    <!-- Include Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    
+    <!-- Cache busting script - load this before other resources -->
+    <script>
+        // Immediate-invoking function to set up cache busting
+        (function() {
+            // First attempt to get version from API
+            fetch('/api/version')
+                .then(response => response.json())
+                .then(data => {
+                    loadResources(data.version);
+                })
+                .catch(error => {
+                    console.error('Error fetching version:', error);
+                    // Fallback to timestamp
+                    loadResources(new Date().getTime());
+                });
+                
+            function loadResources(version) {
+                // Create and append CSS link with version
+                // Load main CSS
+                const cssLink = document.createElement('link');
+                cssLink.rel = 'stylesheet';
+                cssLink.href = `/static/css/styles.css?v=${version}`;
+                document.head.appendChild(cssLink);
+                
+                // Load navigation CSS
+                const navCssLink = document.createElement('link');
+                navCssLink.rel = 'stylesheet';
+                navCssLink.href = `/static/css/nav.css?v=${version}`;
+                document.head.appendChild(navCssLink);
+                
+                // Store version for later use when loading JS
+                window.APP_CACHE_VERSION = version;
+            }
+        })();
+    </script>
+    
+    <style>
+        /* Additional styles specific to the battery health page */
+        .battery-health-container {
+            background-color: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        
+        .filter-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .filter-section select {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+            min-width: 200px;
+        }
+        
+        .chart-info {
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 15px;
+            margin-bottom: 10px;
+        }
+        
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .battery-info-box {
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-left: 4px solid #3498db;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>BMW CarData - Fleet Battery Health</h1>
+            <nav class="main-nav">
+                <ul>
+                    <li><a href="/">Dashboard</a></li>
+                    <li><a href="/stats">Anonymous Stats</a></li>
+                    <li class="active"><a href="/battery">Fleet Battery Health</a></li>
+                </ul>
+            </nav>
+            <p class="notice">This dashboard shows anonymous battery health metrics for the fleet. No personal data is stored or displayed.</p>
+        </header>
+
+        <section class="filter-section">
+            <div>
+                <label for="model-filter">Filter by Model:</label>
+                <select id="model-filter">
+                    <option value="">All Models</option>
+                    <!-- Will be populated dynamically -->
+                </select>
+            </div>
+        </section>
+
+        <section class="battery-health-container">
+            <div class="battery-info-box">
+                <h3>About Battery Capacity Measurements</h3>
+                <p>The chart below shows battery capacity estimates based on charging sessions plotted against vehicle mileage. Points represent individual measurements, while the blue line shows the linear average capacity trend at each mileage point.</p>
+                <p>A healthy battery will show gradual capacity decline with increasing mileage. Sudden drops may indicate calibration issues rather than actual capacity loss.</p>
+            </div>
+            
+            <div class="chart-legend">
+                <div class="legend-item">
+                    <span class="legend-color" style="background-color: rgba(128, 128, 128, 0.3);"></span>
+                    <span>Individual Measurements</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background-color: #3498db;"></span>
+                    <span>Average at Current Kilometers</span>
+                </div>
+            </div>
+            
+            <div id="battery-health-chart" style="height: 500px;"></div>
+            
+            <div class="chart-info">
+                <p><strong>Note:</strong> Battery capacity is estimated from charging sessions where a significant charge was added (>20% SOC change).</p>
+            </div>
+        </section>
+        
+        <div class="button-container" style="text-align: center; margin: 30px 0;">
+            <a href="/" class="button">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <footer>
+        <div class="imprint">
+            <h3>Impressum</h3>
+            <p>Freie Netze München e. V.</p>
+            <p>Parkstraße 28</p>
+            <p>82131 Gauting</p>
+        </div>
+    </footer>
+
+    <!-- Battery Health JS -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const modelFilter = document.getElementById('model-filter');
+            
+            // Add event listener for model filter
+            modelFilter.addEventListener('change', loadBatteryHealthData);
+            
+            // Initial load
+            loadBatteryHealthData();
+        });
+        
+        async function loadBatteryHealthData() {
+            try {
+                const modelFilter = document.getElementById('model-filter').value;
+                const url = `/api/battery-health${modelFilter ? `?model=${encodeURIComponent(modelFilter)}` : ''}`;
+                
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Update model filter options if we received them
+                updateModelFilter(data.available_models, data.model_filter);
+                
+                // Render the battery health chart
+                renderBatteryHealthChart(data.battery_health_data);
+                
+            } catch (error) {
+                console.error('Error loading battery health data:', error);
+                showError('Failed to load battery health data. Please try again later.');
+            }
+        }
+        
+        function updateModelFilter(models, currentSelection) {
+            if (!models || !Array.isArray(models)) return;
+            
+            const modelFilter = document.getElementById('model-filter');
+            
+            // Save current selection
+            const currentValue = currentSelection || modelFilter.value;
+            
+            // Clear existing options except the "All Models" option
+            while (modelFilter.options.length > 1) {
+                modelFilter.remove(1);
+            }
+            
+            // Add new options
+            models.forEach(model => {
+                if (model) {  // Only add non-empty models
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    modelFilter.appendChild(option);
+                }
+            });
+            
+            // Restore selection if it exists in the new options
+            if (currentValue) {
+                for (let i = 0; i < modelFilter.options.length; i++) {
+                    if (modelFilter.options[i].value === currentValue) {
+                        modelFilter.selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        function renderBatteryHealthChart(batteryData) {
+            if (!batteryData || !Array.isArray(batteryData) || batteryData.length === 0) {
+                document.getElementById('battery-health-chart').innerHTML = 
+                    '<div style="text-align:center;padding:40px;color:#666;">No battery health data available</div>';
+                return;
+            }
+            
+            // Separate data into raw points and trend
+            const rawPoints = batteryData.filter(item => !item.is_monthly_average).sort((a, b) => 
+                a.mileage - b.mileage);
+                
+            // Sort trend points by mileage for a proper kilometers-based trend line
+            const trendPoints = batteryData.filter(item => item.is_monthly_average).sort((a, b) => 
+                a.mileage - b.mileage);
+            
+            // Extract x and y values
+            const rawX = rawPoints.map(p => p.mileage);
+            const rawY = rawPoints.map(p => p.estimated_capacity);
+            const rawSizes = rawPoints.map(p => Math.min(20, Math.max(5, p.soc_change / 5)));
+            const rawModels = rawPoints.map(p => p.model || 'Unknown');
+            const rawDates = rawPoints.map(p => new Date(p.date));
+            
+            // Process trend points to create proper series
+            // Group by model to create separate trend lines
+            const modelGroups = {};
+            trendPoints.forEach(p => {
+                const model = p.model || 'Unknown';
+                if (!modelGroups[model]) {
+                    modelGroups[model] = [];
+                }
+                modelGroups[model].push(p);
+            });
+            
+            // For each model, sort by mileage
+            Object.keys(modelGroups).forEach(model => {
+                modelGroups[model].sort((a, b) => a.mileage - b.mileage);
+            });
+            
+            // Now create the trend data
+            const trendX = trendPoints.map(p => p.mileage);
+            const trendY = trendPoints.map(p => p.avg_capacity);
+            const trendModels = trendPoints.map(p => p.model || 'Unknown');
+            const trendDates = trendPoints.map(p => new Date(p.date));
+            
+            // Create hover text - hide dates from individual points
+            const rawHovertext = rawPoints.map((p, i) => {
+                return `Model: ${rawModels[i]}<br>Mileage: ${p.mileage.toLocaleString()} km<br>Capacity: ${p.estimated_capacity.toFixed(1)} kWh<br>SOC Change: ${p.soc_change.toFixed(1)}%`;
+            });
+            
+            const trendHovertext = trendPoints.map((p, i) => {
+                return `Model: ${trendModels[i]}<br>Mileage: ${p.mileage.toLocaleString()} km<br>Avg Capacity: ${p.avg_capacity.toFixed(1)} kWh<br>Data Points: ${p.data_points}`;
+            });
+            
+            // Create traces
+            const rawTrace = {
+                x: rawX,
+                y: rawY,
+                mode: 'markers',
+                type: 'scatter',
+                name: 'Individual Measurements',
+                marker: {
+                    size: rawSizes,
+                    color: 'rgba(128, 128, 128, 0.3)',
+                    line: {
+                        color: 'rgba(128, 128, 128, 0.5)',
+                        width: 1
+                    }
+                },
+                hovertext: rawHovertext,
+                hoverinfo: 'text'
+            };
+            
+            const trendTrace = {
+                x: trendX,
+                y: trendY,
+                mode: 'lines+markers',
+                type: 'scatter',
+                name: 'Average at Current Kilometers',
+                line: {
+                    color: '#3498db',
+                    width: 3,
+                    shape: 'linear'  // Use linear trend line as requested
+                },
+                marker: {
+                    size: 8,
+                    color: '#3498db'
+                },
+                hovertext: trendHovertext,
+                hoverinfo: 'text'
+            };
+            
+            // Define layout
+            const layout = {
+                title: {
+                    text: 'Fleet Battery Capacity Over Kilometers Driven',
+                    font: { size: 20 }
+                },
+                xaxis: {
+                    title: 'Mileage (km)',
+                    tickformat: ',d',
+                    autorange: true  // Let Plotly determine the best range
+                },
+                yaxis: {
+                    title: 'Estimated Capacity (kWh)',
+                    range: [
+                        Math.min(...rawY, ...trendY) * 0.95,  // Less aggressive scaling for better visualization
+                        Math.max(...rawY, ...trendY) * 1.03
+                    ]
+                },
+                hovermode: 'closest',
+                legend: {
+                    orientation: 'h',
+                    y: -0.2
+                },
+                showlegend: true,
+                margin: { t: 50, b: 80, l: 60, r: 40 }
+            };
+            
+            // Create the plot
+            Plotly.newPlot('battery-health-chart', [rawTrace, trendTrace], layout);
+        }
+        
+        function showError(message) {
+            // Create an error message element
+            const errorElement = document.createElement('div');
+            errorElement.className = 'error-message';
+            errorElement.style.backgroundColor = '#ffebee';
+            errorElement.style.color = '#c62828';
+            errorElement.style.padding = '15px';
+            errorElement.style.borderRadius = '5px';
+            errorElement.style.marginBottom = '20px';
+            errorElement.style.textAlign = 'center';
+            errorElement.textContent = message;
+            
+            // Insert at the top of the container
+            const container = document.querySelector('.container');
+            container.insertBefore(errorElement, container.firstChild.nextSibling);
+        }
+    </script>
+</body>
+</html>

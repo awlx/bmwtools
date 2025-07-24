@@ -5,9 +5,9 @@ This project now uses Traefik as a reverse proxy instead of Nginx + Certbot.
 ## Setup Instructions
 
 1. Make sure the `acme.json` file has the proper permissions:
-   ```
+   ***REMOVED***
    chmod 600 traefik/acme.json
-   ```
+   ***REMOVED***
 
 2. Update the domain name in `docker-compose.yaml` if needed:
    - The default domain is set to `bmwtools.localhost`
@@ -19,9 +19,9 @@ This project now uses Traefik as a reverse proxy instead of Nginx + Certbot.
 
 ## Starting the Application
 
-```
+***REMOVED***
 docker-compose up -d
-```
+***REMOVED***
 
 ## How It Works
 

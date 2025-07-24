@@ -37,20 +37,20 @@ This application consists of:
 
 The application is automatically built and published to GitHub Container Registry:
 
-```bash
+***REMOVED***
 # Pull the latest version
 docker pull ghcr.io/awlx/bmwtools:latest
 
 # Create a docker-compose.yml file (see DOCKER.md for complete example)
 # Run the application
 docker-compose up -d
-```
+***REMOVED***
 
 For more details on using the pre-built Docker image, see [DOCKER.md](DOCKER.md).
 
 ### Building Docker Image Locally
 
-```bash
+***REMOVED***
 # Clone the repository
 git clone https://github.com/awlx/bmwtools.git
 cd bmwtools/go-rewrite
@@ -60,23 +60,23 @@ chmod 600 traefik/acme.json
 
 # Build and start the application with Docker Compose
 docker-compose up -d
-```
+***REMOVED***
 
 The application will be available at https://bmwtools.localhost (or your configured domain)
 
 #### Customizing the Domain
 
 Edit the `docker-compose.yaml` file and update the domain in the Traefik labels:
-```yaml
+***REMOVED***yaml
 labels:
   - "traefik.http.routers.bmwtools-server.rule=Host(`your-domain.com`)"
-```
+***REMOVED***
 
 Also update the email address in `traefik/traefik.yml` for Let's Encrypt notifications.
 
 ### Manual Installation
 
-```bash
+***REMOVED***
 # Clone the repository
 git clone https://github.com/awlx/bmwtools.git
 cd bmwtools/go-rewrite
@@ -86,7 +86,7 @@ go build -o bmwtools-server ./cmd/server/main.go
 
 # Run the server
 ./bmwtools-server
-```
+***REMOVED***
 
 The application will be available at http://localhost:8050
 

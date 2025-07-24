@@ -8,9 +8,9 @@ This project is automatically built and published to the GitHub Container Regist
 
 For quick local testing without Docker Compose, you can run the image directly:
 
-```bash
+***REMOVED***
 docker run -p 8050:8050 ghcr.io/awlx/bmwtools:latest
-```
+***REMOVED***
 
 Then access the dashboard by visiting http://127.0.0.1:8050 in your browser.
 
@@ -18,7 +18,7 @@ Then access the dashboard by visiting http://127.0.0.1:8050 in your browser.
 
 If you want to build the image yourself go with the following steps:
 
-```bash
+***REMOVED***
 # Navigate to the go-rewrite directory
 cd go-rewrite
 
@@ -27,13 +27,13 @@ docker build -t bmwtools-local .
 
 # Run the locally built image
 docker run -p 8050:8050 bmwtools-local
-```
+***REMOVED***
 
 ### Production Setup with Docker Compose
 
 For a more robust setup with Traefik for HTTPS and domain support, use Docker Compose:
 
-```yaml
+***REMOVED***yaml
 version: '3.8'
 
 services:
@@ -56,7 +56,7 @@ services:
   
 networks:
   webnet:
-```
+***REMOVED***
 
 ## Available Tags
 
@@ -78,9 +78,9 @@ The Docker images are built for multiple architectures:
 
 To pull the image from GitHub Container Registry, you may need to authenticate:
 
-```bash
+***REMOVED***
 # Login to GitHub Container Registry
 echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
-```
+***REMOVED***
 
 Replace `$CR_PAT` with your GitHub Personal Access Token and `USERNAME` with your GitHub username.
