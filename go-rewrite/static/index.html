@@ -4,12 +4,41 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BMW CarData - Charging Session Dashboard</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
+    <!-- CSS will be loaded dynamically with cache busting -->
     <!-- Include Plotly.js -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <!-- Include Leaflet for maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Cache busting script - load this before other resources -->
+    <script>
+        // Immediate-invoking function to set up cache busting
+        (function() {
+            // First attempt to get version from API
+            fetch('/api/version')
+                .then(response => response.json())
+                .then(data => {
+                    loadResources(data.version);
+                })
+                .catch(error => {
+                    console.error('Error fetching version:', error);
+                    // Fallback to timestamp
+                    loadResources(new Date().getTime());
+                });
+                
+            function loadResources(version) {
+                // Create and append CSS link with version
+                const cssLink = document.createElement('link');
+                cssLink.rel = 'stylesheet';
+                cssLink.href = `/static/css/styles.css?v=${version}`;
+                document.head.appendChild(cssLink);
+                
+                // Store version for later use when loading JS
+                window.APP_CACHE_VERSION = version;
+            }
+        })();
+    </script>
 </head>
 <body>
     <div class="container">
@@ -120,6 +149,32 @@
         </div>
     </footer>
 
-    <script src="/static/js/app.js"></script>
+    <!-- Main app script is loaded with version from cache busting script -->
+    <script>
+        // Create script element with proper version
+        const scriptElement = document.createElement('script');
+        // Use the version that was set by the cache busting script at the top of the page
+        // or fallback to current timestamp if not available
+        const version = window.APP_CACHE_VERSION || new Date().getTime();
+        scriptElement.src = `/static/js/app.js?v=${version}`;
+        
+        // Make sure to wait for the script to load before trying to use it
+        scriptElement.onload = function() {
+            console.log('BMW Tools app.js loaded successfully');
+            // Check if the initialization function exists and call it
+            if (typeof initBMWTools === 'function') {
+                initBMWTools();
+            }
+        };
+        
+        scriptElement.onerror = function() {
+            console.error('Failed to load BMW Tools app.js');
+        };
+        
+        document.body.appendChild(scriptElement);
+        
+        // Log the version being used
+        console.log('BMW Tools version:', version);
+    </script>
 </body>
 </html>

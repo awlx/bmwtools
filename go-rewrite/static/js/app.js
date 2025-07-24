@@ -1,3 +1,6 @@
+// App version - should match the server version in pkg/api/handler.go
+const APP_VERSION = '1.0.0';
+
 // Global variables
 let sessions = [];
 let currentSession = null;
@@ -2735,3 +2738,14 @@ function createRangeMap() {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', init);
+
+// Expose initialization function for dynamic script loading
+function initBMWTools() {
+    // If DOM is already loaded, initialize immediately
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        init();
+    } else {
+        // Otherwise wait for DOMContentLoaded
+        document.addEventListener('DOMContentLoaded', init);
+    }
+}
