@@ -47,25 +47,27 @@ The system uses the following tables:
 - `uploads`: Tracks uploaded files with content hashes to prevent duplicates
 - `vehicles`: Stores hashed vehicle identifiers and models
 - `sessions`: Stores anonymized charging session data
-- `battery_health`: Tracks battery capacity estimates over time
+- `battery_health`: Tracks battery capacity estimates over time with mileage information
+
+**Note:** If you're upgrading from a previous version, you may need to run the database migration script to add the mileage column. See [MIGRATION.md](MIGRATION.md) for details.
 
 ## Building with Database Support
 
-***REMOVED***
+```bash
 # Install SQLite dependencies and build
 make setup-db
 make build
 
 # Or do everything at once
 make all
-***REMOVED***
+```
 
 ## Docker Deployment
 
 The Docker configuration includes a persistent volume for the database:
 
-***REMOVED***
+```bash
 docker-compose up -d
-***REMOVED***
+```
 
 This will mount a `./data` directory to store the database file.
