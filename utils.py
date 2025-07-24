@@ -30,7 +30,7 @@ def get_disclaimer_with_hash():
     sorted_hashes = sorted(sha256_hashes.items())  # Sort by file name alphabetically
     hash_lines = "\n".join([f"{file}: {hash}" for file, hash in sorted_hashes])
     return ('Disclaimer: This application stores all uploaded data in memory, if you refresh your session is lost.\n' 
-            'CarData contains location data of your charges. Use at your own risk!\n'
+            'CarData contains location data of your charges, but no location data is stored on the server. Use at your own risk!\n'
             f"SHA256 of the files:\n{hash_lines}\n" 
             'You can verify authenticity at https://github.com/awlx/bmwtools')
 

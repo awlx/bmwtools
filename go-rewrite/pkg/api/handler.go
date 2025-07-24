@@ -17,15 +17,18 @@ const AppVersion = "1.0.1"
 
 // Handler handles API requests
 type Handler struct {
-	dataManager *data.Manager
-	dbManager   *database.Manager
+	dbManager *database.Manager
+	sessions  *SessionStore
 }
 
 // NewHandler creates a new API handler
-func NewHandler(dataManager *data.Manager, dbManager *database.Manager) *Handler {
+func NewHandler(_ *data.Manager, dbManager *database.Manager) *Handler {
+	// Create a new session store with 30 minute expiration time
+	sessionStore := NewSessionStore(30 * time.Minute)
+
 	return &Handler{
-		dataManager: dataManager,
-		dbManager:   dbManager,
+		dbManager: dbManager,
+		sessions:  sessionStore,
 	}
 }
 
@@ -98,15 +101,26 @@ func (h *Handler) UploadJSON(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// Process the file with the data manager
-	err = h.dataManager.LoadJSON(file)
+	// Get or create a session for this user
+	sessionID, err := c.Cookie("session_id")
+	if err != nil {
+		sessionID = ""
+	}
+	sessionID, session := h.sessions.GetOrCreateSession(sessionID)
+
+	// Always set the cookie to refresh expiration time
+	// Set cookie to expire in 30 minutes
+	c.SetCookie("session_id", sessionID, 1800, "/", "", false, true)
+
+	// Process the file with the session's data manager
+	err = session.DataManager.LoadJSON(file)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Error processing JSON: %v", err)})
 		return
 	}
 
 	// Get the processed sessions
-	sessions := h.dataManager.GetSessions()
+	sessions := session.DataManager.GetSessions()
 
 	// Check for consent to store in fleet statistics database
 	consentParam := c.PostForm("consent")
@@ -177,15 +191,26 @@ func (h *Handler) LoadDemoData(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// Process the file
-	err = h.dataManager.LoadJSON(file)
+	// Get or create a session for this user
+	sessionID, err := c.Cookie("session_id")
+	if err != nil {
+		sessionID = ""
+	}
+	sessionID, session := h.sessions.GetOrCreateSession(sessionID)
+
+	// Always set the cookie to refresh expiration time
+	// Set cookie to expire in 30 minutes
+	c.SetCookie("session_id", sessionID, 1800, "/", "", false, true)
+
+	// Process the file with the session's data manager
+	err = session.DataManager.LoadJSON(file)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error processing demo data: %v", err)})
 		return
 	}
 
 	// Get the processed sessions
-	sessions := h.dataManager.GetSessions()
+	sessions := session.DataManager.GetSessions()
 
 	// Demo data is intentionally NOT stored in the database
 	// This is because demo data is just for testing/preview and shouldn't
@@ -201,26 +226,43 @@ func (h *Handler) LoadDemoData(c *gin.Context) {
 
 // GetSessions returns all sessions or filtered by date range
 func (h *Handler) GetSessions(c *gin.Context) {
-	var sessions []data.Session
+	// Get the user's session
+	sessionID, err := c.Cookie("session_id")
+	if err != nil {
+		// No session found, return empty data
+		c.JSON(http.StatusOK, []map[string]interface{}{})
+		return
+	}
 
-	// Get date range parameters
+	// Get the session data
+	session, exists := h.sessions.GetSession(sessionID)
+	if !exists {
+		// Session expired, return empty data
+		c.JSON(http.StatusOK, []map[string]interface{}{})
+		return
+	}
+
+	// Use the session's data manager
+	var sessions []data.Session = session.DataManager.GetSessions()
+
+	// Apply any date filters if provided
 	startDateStr := c.Query("startDate")
 	endDateStr := c.Query("endDate")
 
-	if startDateStr != "" && endDateStr != "" {
+	if startDateStr != "" && endDateStr != "" && len(sessions) > 0 {
 		startDate, err1 := time.Parse("2006-01-02", startDateStr)
 		endDate, err2 := time.Parse("2006-01-02", endDateStr)
 
 		if err1 == nil && err2 == nil {
 			// Add a day to endDate to make it inclusive
 			endDate = endDate.AddDate(0, 0, 1)
-			sessions = h.dataManager.GetSessionsByDateRange(startDate, endDate)
+
+			// Filter sessions by date range
+			sessions = session.DataManager.GetSessionsByDateRange(startDate, endDate)
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format"})
 			return
 		}
-	} else {
-		sessions = h.dataManager.GetSessions()
 	}
 
 	// Convert to a frontend-friendly format
@@ -257,41 +299,79 @@ func (h *Handler) GetSessions(c *gin.Context) {
 func (h *Handler) GetSession(c *gin.Context) {
 	id := c.Param("id")
 
-	session, found := h.dataManager.GetSessionByID(id)
-	if !found {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+	// Get the user's session
+	sessionID, err := c.Cookie("session_id")
+	if err != nil {
+		// No session found, return error
+		c.JSON(http.StatusNotFound, gin.H{"error": "No session data available"})
 		return
 	}
 
-	c.JSON(http.StatusOK, session)
+	// Get the session data
+	userSession, exists := h.sessions.GetSession(sessionID)
+	if !exists {
+		// Session expired, return error
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session expired, please reload data"})
+		return
+	}
+
+	// Get all charging sessions
+	uploadedSessions := userSession.DataManager.GetSessions()
+
+	// Search for the requested session by ID
+	for _, session := range uploadedSessions {
+		if session.ID == id {
+			c.JSON(http.StatusOK, session)
+			return
+		}
+	}
+
+	c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 }
 
 // GetStats returns various statistics
 func (h *Handler) GetStats(c *gin.Context) {
-	// Get date range parameters (same as in GetSessions)
+	// Get the user's session
+	sessionID, err := c.Cookie("session_id")
+	if err != nil {
+		// No session found, return error
+		c.JSON(http.StatusNotFound, gin.H{"error": "No data available for statistics"})
+		return
+	}
+
+	// Get the session data
+	userSession, exists := h.sessions.GetSession(sessionID)
+	if !exists {
+		// Session expired, return error
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session expired, please reload data"})
+		return
+	}
+
+	// Get the data manager from the user's session
+	requestDataManager := userSession.DataManager
+
+	// Get date range parameters
 	startDateStr := c.Query("startDate")
 	endDateStr := c.Query("endDate")
 
-	var sessions []data.Session
-	var startDate, endDate time.Time
+	var sessions []data.Session = requestDataManager.GetSessions()
 	var dateFilterActive bool
 
 	if startDateStr != "" && endDateStr != "" {
-		var err1, err2 error
-		startDate, err1 = time.Parse("2006-01-02", startDateStr)
-		endDate, err2 = time.Parse("2006-01-02", endDateStr)
+		startDate, err1 := time.Parse("2006-01-02", startDateStr)
+		endDate, err2 := time.Parse("2006-01-02", endDateStr)
 
 		if err1 == nil && err2 == nil {
 			// Add a day to endDate to make it inclusive
 			endDate = endDate.AddDate(0, 0, 1)
-			sessions = h.dataManager.GetSessionsByDateRange(startDate, endDate)
+			sessions = requestDataManager.GetSessionsByDateRange(startDate, endDate)
 			dateFilterActive = true
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format"})
 			return
 		}
 	} else {
-		sessions = h.dataManager.GetSessions()
+		// Keep the sessions we already have from the user's session
 	}
 
 	// Calculate statistics using filtered sessions if filter is active
@@ -300,23 +380,15 @@ func (h *Handler) GetStats(c *gin.Context) {
 	var sessionStats map[string]interface{}
 	var estimatedCapacity []map[string]interface{}
 
-	if dateFilterActive {
-		// Create a temporary data manager with only the filtered sessions
-		tempManager := data.NewManager()
-		tempManager.SetSessions(sessions)
+	// Create a temporary data manager with the sessions
+	tempManager := data.NewManager()
+	tempManager.SetSessions(sessions)
 
-		// Calculate stats using the filtered data
-		overallEfficiency, powerConsumption, powerConsumptionWithoutGridLosses = tempManager.CalculateOverallStats()
-		socStats = tempManager.CalculateSOCStatistics()
-		sessionStats = tempManager.GetSessionStats()
-		estimatedCapacity = tempManager.CalculateEstimatedBatteryCapacity()
-	} else {
-		// Use all data
-		overallEfficiency, powerConsumption, powerConsumptionWithoutGridLosses = h.dataManager.CalculateOverallStats()
-		socStats = h.dataManager.CalculateSOCStatistics()
-		sessionStats = h.dataManager.GetSessionStats()
-		estimatedCapacity = h.dataManager.CalculateEstimatedBatteryCapacity()
-	}
+	// Calculate stats using the data
+	overallEfficiency, powerConsumption, powerConsumptionWithoutGridLosses = tempManager.CalculateOverallStats()
+	socStats = tempManager.CalculateSOCStatistics()
+	sessionStats = tempManager.GetSessionStats()
+	estimatedCapacity = tempManager.CalculateEstimatedBatteryCapacity()
 
 	// Combine everything into one response
 	stats := map[string]interface{}{
@@ -326,7 +398,7 @@ func (h *Handler) GetStats(c *gin.Context) {
 		"soc_stats":                        socStats,
 		"session_stats":                    sessionStats,
 		"estimated_capacity":               estimatedCapacity,
-		"using_estimated_values":           h.dataManager.IsUsingEstimatedValues(),
+		"using_estimated_values":           tempManager.IsUsingEstimatedValues(),
 		"date_filter_active":               dateFilterActive,
 	}
 
@@ -335,7 +407,26 @@ func (h *Handler) GetStats(c *gin.Context) {
 
 // GetMapData returns data for the map
 func (h *Handler) GetMapData(c *gin.Context) {
-	// Get date range parameters (same as in GetSessions and GetStats)
+	// Get the user's session
+	sessionID, err := c.Cookie("session_id")
+	if err != nil {
+		// No session found, return error
+		c.JSON(http.StatusNotFound, gin.H{"error": "No data available for map"})
+		return
+	}
+
+	// Get the session data
+	userSession, exists := h.sessions.GetSession(sessionID)
+	if !exists {
+		// Session expired, return error
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session expired, please reload data"})
+		return
+	}
+
+	// Get the data manager from the user's session
+	requestDataManager := userSession.DataManager
+
+	// Get date range parameters
 	startDateStr := c.Query("startDate")
 	endDateStr := c.Query("endDate")
 
@@ -348,13 +439,13 @@ func (h *Handler) GetMapData(c *gin.Context) {
 		if err1 == nil && err2 == nil {
 			// Add a day to endDate to make it inclusive
 			endDate = endDate.AddDate(0, 0, 1)
-			sessions = h.dataManager.GetSessionsByDateRange(startDate, endDate)
+			sessions = requestDataManager.GetSessionsByDateRange(startDate, endDate)
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format"})
 			return
 		}
 	} else {
-		sessions = h.dataManager.GetSessions()
+		sessions = requestDataManager.GetSessions()
 	}
 
 	// Group sessions by location to count occurrences
@@ -437,11 +528,27 @@ func (h *Handler) GetMapData(c *gin.Context) {
 
 // GetGroupedProviders returns statistics grouped by provider with similar names merged
 func (h *Handler) GetGroupedProviders(c *gin.Context) {
+	// Get the user's session
+	sessionID, err := c.Cookie("session_id")
+	if err != nil {
+		// No session found, return error
+		c.JSON(http.StatusNotFound, gin.H{"error": "No data available for statistics"})
+		return
+	}
+
+	// Get the session data
+	userSession, exists := h.sessions.GetSession(sessionID)
+	if !exists {
+		// Session expired, return error
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session expired, please reload data"})
+		return
+	}
+
 	// Get date range parameters
 	startDateStr := c.Query("startDate")
 	endDateStr := c.Query("endDate")
 
-	var tempManager *data.Manager
+	var tempManager *data.Manager = userSession.DataManager
 
 	if startDateStr != "" && endDateStr != "" {
 		startDate, err1 := time.Parse("2006-01-02", startDateStr)
@@ -450,7 +557,7 @@ func (h *Handler) GetGroupedProviders(c *gin.Context) {
 		if err1 == nil && err2 == nil {
 			// Add a day to endDate to make it inclusive
 			endDate = endDate.AddDate(0, 0, 1)
-			sessions := h.dataManager.GetSessionsByDateRange(startDate, endDate)
+			sessions := tempManager.GetSessionsByDateRange(startDate, endDate)
 
 			// Create a temporary manager with filtered sessions
 			tempManager = data.NewManager()
@@ -459,9 +566,6 @@ func (h *Handler) GetGroupedProviders(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format"})
 			return
 		}
-	} else {
-		// Use the main manager
-		tempManager = h.dataManager
 	}
 
 	// Get grouped provider statistics

@@ -25,7 +25,7 @@ def calculate_sha256(file_path):
 def get_disclaimer_with_hash():
     script_hash = calculate_sha256(__file__)
     return ('Disclaimer: This application stores all uploaded data in memory, if you refresh your session is lost.\n' 
-            'CarData contains location data of your charges. Use at your own risk!\n'
+            'CarData contains location data of your charges, but no location data is stored on the server. Use at your own risk!\n'
             f"SHA256 of the script: {script_hash} \n" 
             'You can verify authenticity at https://github.com/awlx/bmwtools/blob/main/charging_stats.py')
 # Initialize Dash app

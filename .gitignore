@@ -1,4 +1,4 @@
-*.html
+
 *.json
 bmwtools-server
 go-rewrite/data/bmwtools.db

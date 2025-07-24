@@ -2,7 +2,8 @@
 FROM golang:1.22-alpine AS builder
 
 # Install build dependencies including gcc and required libraries
-RUN apk add --no-cache gcc musl-dev
+RUN apk update && apk add --no-cache gcc g++ make musl-dev libc-dev sqlite-dev && \
+    gcc --version
 
 WORKDIR /app
 
@@ -20,6 +21,9 @@ RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o bmwtools-server .
 
 # Final stage
 FROM alpine:latest
+
+# Add runtime dependencies if any CGO-compiled libraries are needed
+RUN apk add --no-cache sqlite-libs
 
 WORKDIR /app
 

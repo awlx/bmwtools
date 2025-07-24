@@ -95,6 +95,7 @@ func (m *Manager) initSchema() error {
 			estimated_capacity REAL NOT NULL,
 			soc_change REAL NOT NULL,
 			is_raw_data BOOLEAN NOT NULL,
+			mileage REAL DEFAULT 0,
 			FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
 		);
 	`)
@@ -286,10 +287,10 @@ func (m *Manager) StoreSessions(sessions []data.Session, filename string, userSp
 				estimatedCapacity := (session.EnergyAddedHvb * 100) / (session.SocEnd - session.SocStart)
 				_, err = tx.Exec(
 					`INSERT INTO battery_health 
-					(vehicle_id, date, estimated_capacity, soc_change, is_raw_data) 
-					VALUES (?, ?, ?, ?, ?)`,
+					(vehicle_id, date, estimated_capacity, soc_change, is_raw_data, mileage) 
+					VALUES (?, ?, ?, ?, ?, ?)`,
 					vehicleID, session.StartTime, estimatedCapacity,
-					session.SocEnd-session.SocStart, true,
+					session.SocEnd-session.SocStart, true, session.Mileage,
 				)
 				if err != nil {
 					return false, err
@@ -345,6 +346,7 @@ func (m *Manager) GetFleetBatteryHealth(modelFilter string) ([]map[string]interf
 			bh.estimated_capacity, 
 			bh.soc_change,
 			bh.is_raw_data,
+			bh.mileage,
 			v.model
 		FROM battery_health bh
 		JOIN vehicles v ON bh.vehicle_id = v.id
@@ -367,17 +369,18 @@ func (m *Manager) GetFleetBatteryHealth(modelFilter string) ([]map[string]interf
 	var result []map[string]interface{}
 	for rows.Next() {
 		var date time.Time
-		var capacity, socChange float64
+		var capacity, socChange, mileage float64
 		var isRawData bool
 		var model string
 
-		if err := rows.Scan(&date, &capacity, &socChange, &isRawData, &model); err != nil {
+		if err := rows.Scan(&date, &capacity, &socChange, &isRawData, &mileage, &model); err != nil {
 			return nil, err
 		}
 
 		result = append(result, map[string]interface{}{
 			"date":               date,
 			"estimated_capacity": capacity,
+			"mileage":            mileage,
 			"soc_change":         socChange,
 			"is_raw_data":        isRawData,
 			"model":              model,
@@ -395,6 +398,7 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 			avg(bh.estimated_capacity) as avg_capacity,
 			sum(bh.soc_change) as total_soc_change,
 			count(*) as data_points,
+			avg(bh.mileage) as avg_mileage,
 			v.model
 		FROM battery_health bh
 		JOIN vehicles v ON bh.vehicle_id = v.id
@@ -417,11 +421,11 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 	var result []map[string]interface{}
 	for rows.Next() {
 		var month string
-		var avgCapacity, totalSocChange float64
+		var avgCapacity, totalSocChange, avgMileage float64
 		var dataPoints int
 		var model string
 
-		if err := rows.Scan(&month, &avgCapacity, &totalSocChange, &dataPoints, &model); err != nil {
+		if err := rows.Scan(&month, &avgCapacity, &totalSocChange, &dataPoints, &avgMileage, &model); err != nil {
 			return nil, err
 		}
 
@@ -436,6 +440,7 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 			"avg_capacity":       avgCapacity,
 			"total_soc_change":   totalSocChange,
 			"data_points":        dataPoints,
+			"mileage":            avgMileage,
 			"model":              model,
 			"is_monthly_average": true,
 		})

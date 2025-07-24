@@ -127,8 +127,8 @@
         <section class="battery-health-container">
             <div class="battery-info-box">
                 <h3>About Battery Capacity Measurements</h3>
-                <p>The chart below shows battery capacity estimates based on charging sessions. Points represent individual measurements, while the blue line shows the monthly average trend.</p>
-                <p>A healthy battery will show gradual capacity decline over time. Sudden drops may indicate calibration issues rather than actual capacity loss.</p>
+                <p>The chart below shows battery capacity estimates based on charging sessions plotted against vehicle mileage. Points represent individual measurements, while the blue line shows the monthly average trend.</p>
+                <p>A healthy battery will show gradual capacity decline with increasing mileage. Sudden drops may indicate calibration issues rather than actual capacity loss.</p>
             </div>
             
             <div class="chart-legend">
@@ -242,31 +242,33 @@
             
             // Separate data into raw points and trend
             const rawPoints = batteryData.filter(item => !item.is_monthly_average).sort((a, b) => 
-                new Date(a.date) - new Date(b.date));
+                a.mileage - b.mileage);
                 
             const trendPoints = batteryData.filter(item => item.is_monthly_average).sort((a, b) => 
-                new Date(a.date) - new Date(b.date));
+                a.mileage - b.mileage);
             
             // Extract x and y values
-            const rawX = rawPoints.map(p => new Date(p.date));
+            const rawX = rawPoints.map(p => p.mileage);
             const rawY = rawPoints.map(p => p.estimated_capacity);
             const rawSizes = rawPoints.map(p => Math.min(20, Math.max(5, p.soc_change / 5)));
             const rawModels = rawPoints.map(p => p.model || 'Unknown');
+            const rawDates = rawPoints.map(p => new Date(p.date));
             
-            const trendX = trendPoints.map(p => new Date(p.date));
+            const trendX = trendPoints.map(p => p.mileage);
             const trendY = trendPoints.map(p => p.avg_capacity);
             const trendModels = trendPoints.map(p => p.model || 'Unknown');
+            const trendDates = trendPoints.map(p => new Date(p.date));
             
             // Create hover text
             const rawHovertext = rawPoints.map((p, i) => {
                 const date = new Date(p.date).toLocaleDateString();
-                return `Model: ${rawModels[i]}<br>Date: ${date}<br>Capacity: ${p.estimated_capacity.toFixed(1)} kWh<br>SOC Change: ${p.soc_change.toFixed(1)}%`;
+                return `Model: ${rawModels[i]}<br>Date: ${date}<br>Mileage: ${p.mileage.toLocaleString()} km<br>Capacity: ${p.estimated_capacity.toFixed(1)} kWh<br>SOC Change: ${p.soc_change.toFixed(1)}%`;
             });
             
             const trendHovertext = trendPoints.map((p, i) => {
                 const date = new Date(p.date).toLocaleDateString();
                 const month = p.month;
-                return `Model: ${trendModels[i]}<br>Month: ${month}<br>Avg Capacity: ${p.avg_capacity.toFixed(1)} kWh<br>Data Points: ${p.data_points}`;
+                return `Model: ${trendModels[i]}<br>Month: ${month}<br>Avg Mileage: ${p.mileage.toLocaleString()} km<br>Avg Capacity: ${p.avg_capacity.toFixed(1)} kWh<br>Data Points: ${p.data_points}`;
             });
             
             // Create traces
@@ -309,12 +311,12 @@
             // Define layout
             const layout = {
                 title: {
-                    text: 'Fleet Battery Capacity Over Time',
+                    text: 'Fleet Battery Capacity Over Kilometers Driven',
                     font: { size: 20 }
                 },
                 xaxis: {
-                    title: 'Date',
-                    tickformat: '%b %Y'
+                    title: 'Mileage (km)',
+                    tickformat: ',d'
                 },
                 yaxis: {
                     title: 'Estimated Capacity (kWh)',
