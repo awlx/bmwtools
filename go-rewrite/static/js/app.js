@@ -1,5 +1,5 @@
 // App version - should match the server version in pkg/api/handler.go
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 
 // Global variables
 let sessions = [];
@@ -76,7 +76,7 @@ function init() {
 // Set up the disclaimer
 function setDisclaimer() {
     disclaimerEl.textContent = 'Disclaimer: This application stores all uploaded data in memory, if you refresh your session is lost.\n' +
-        'CarData contains location data of your charges. Use at your own risk!\n' +
+        'CarData contains location data of your charges, but no location data is stored on the server. Use at your own risk!\n' +
         'You can verify authenticity at https://github.com/awlx/bmwtools';
 }
 
@@ -87,6 +87,16 @@ function setupEventListeners() {
     applyDateFilterBtn.addEventListener('click', applyDateFilter);
     toggleUnitsBtn.addEventListener('click', toggleUnits);
     sessionDropdownEl.addEventListener('change', handleSessionSelection);
+    
+    // Set up consent checkbox to show/hide model selector
+    const consentCheckbox = document.getElementById('fleet-stats-consent');
+    const modelSelector = document.getElementById('model-selector');
+    
+    if (consentCheckbox && modelSelector) {
+        consentCheckbox.addEventListener('change', function() {
+            modelSelector.style.display = this.checked ? 'block' : 'none';
+        });
+    }
     
     // Set up drag and drop events for the upload container
     const uploadContainer = document.querySelector('.upload-container');
@@ -167,6 +177,24 @@ async function uploadFile(file) {
 
     const formData = new FormData();
     formData.append('file', file);
+    
+    // Get the consent checkbox value
+    const consentCheckbox = document.getElementById('fleet-stats-consent');
+    if (consentCheckbox && consentCheckbox.checked) {
+        formData.append('consent', 'true');
+        
+        // Get the selected BMW model if consent is given
+        const modelSelect = document.getElementById('bmw-model');
+        if (modelSelect && modelSelect.value) {
+            formData.append('model', modelSelect.value);
+        } else {
+            // Show an error if no model is selected when consent is given
+            alert('Please select a BMW model when sharing data for fleet statistics.');
+            return; // Stop the upload process
+        }
+    } else {
+        formData.append('consent', 'false');
+    }
 
     try {
         const response = await fetch('/api/upload', {
@@ -177,6 +205,28 @@ async function uploadFile(file) {
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || 'Error uploading file');
+        }
+
+        const result = await response.json();
+        
+        // Only show popup when data was actually stored in fleet stats or it's a duplicate
+        if (result.stored || !result.new) {
+            // Show feedback about whether data was stored for fleet statistics
+            let message = result.message;
+            
+            if (result.stored) {
+                if (result.stored_count) {
+                    message += `\n\nYour anonymous data was included in the fleet statistics. Total sessions in database: ${result.stored_count}.`;
+                } else {
+                    message += "\n\nYour anonymous data was included in the fleet statistics.";
+                }
+            }
+            
+            if (!result.new && result.stored) {
+                message += " Note: This file was already uploaded previously.";
+            }
+            
+            alert(message);
         }
 
         await loadSessionData();

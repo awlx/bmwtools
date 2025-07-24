@@ -8,10 +8,10 @@ GO_MODULE=github.com/awlx/bmwtools
 # Go build flags
 LDFLAGS=-ldflags "-s -w"
 
-.PHONY: all build clean run docker-build docker-run docker-stop test lint vet fmt help
+.PHONY: all build clean run docker-build docker-run docker-stop test lint vet fmt help setup-db
 
 # Default target
-all: clean build
+all: clean setup-db build
 
 # Build the application
 build:
@@ -75,6 +75,11 @@ compose-down:
 	@echo "Stopping Docker Compose services..."
 	docker-compose down
 
+# Setup database dependencies
+setup-db:
+	@echo "Setting up database dependencies..."
+	go get github.com/mattn/go-sqlite3
+
 # Help
 help:
 	@echo "BMW CarData Dashboard Go Implementation"
@@ -87,6 +92,7 @@ help:
 	@echo "  make lint           - Run linter"
 	@echo "  make vet            - Run go vet"
 	@echo "  make fmt            - Format code"
+	@echo "  make setup-db       - Set up database dependencies"
 	@echo "  make docker-build   - Build Docker image"
 	@echo "  make docker-run     - Run in Docker container"
 	@echo "  make docker-stop    - Stop Docker container"

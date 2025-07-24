@@ -67,6 +67,7 @@ The application will be available at https://bmwtools.localhost (or your configu
 #### Customizing the Domain
 
 Edit the `docker-compose.yaml` file and update the domain in the Traefik labels:
+
 ```yaml
 labels:
   - "traefik.http.routers.bmwtools-server.rule=Host(`your-domain.com`)"
@@ -115,6 +116,11 @@ The Go implementation offers several advantages over the original Python version
 - **Memory Efficiency**: Lower memory footprint
 - **Deployment**: Single binary deployment
 - **Security**: Strong type system and memory safety
+
+## Database Migration
+
+If you're upgrading from a previous version, you may need to migrate your database schema.
+See [MIGRATION.md](MIGRATION.md) for instructions on updating your database.
 
 ## Disclaimer
 

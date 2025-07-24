@@ -52,7 +52,7 @@ func TestUnknownProviderAnalysis(t *testing.T) {
 
 	t.Log("2. Fix for providers with very few letters:")
 	t.Log("   - Consider maintaining a whitelist of valid short providers")
-	t.Log("   - Example: 'E.ON', 'EWE', 'RWE' are valid short names")
+	t.Log("   - ***REMOVED*** 'E.ON', 'EWE', 'RWE' are valid short names")
 
 	t.Log("3. Fix for numeric-only or special character-only providers:")
 	t.Log("   - Add special handling for specific numeric/character patterns")

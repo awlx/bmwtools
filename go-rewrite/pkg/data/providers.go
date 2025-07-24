@@ -18,6 +18,11 @@ type ProviderStats struct {
 	FailureRate  float64 `json:"failure_rate"`
 }
 
+// NormalizeProviderName exports the provider name normalization functionality
+func NormalizeProviderName(name string) string {
+	return normalizeProviderName(name)
+}
+
 // normalizeProviderName normalizes a provider name for comparison
 func normalizeProviderName(name string) string {
 	if name == "" || name == "Unknown" {
