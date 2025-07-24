@@ -177,23 +177,58 @@
         async function loadBatteryHealthData() {
             try {
                 const modelFilter = document.getElementById('model-filter');
-                const selectedModel = modelFilter.value;
+                let selectedModel = modelFilter.value;
                 
-                // Always include model parameter if we have one
-                const url = `/api/battery-health${selectedModel ? `?model=${encodeURIComponent(selectedModel)}` : ''}`;
-                
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP error ${response.status}`);
+                // Initial API call without model filter to get available models
+                if (!selectedModel) {
+                    const initialResponse = await fetch('/api/battery-health');
+                    if (!initialResponse.ok) {
+                        throw new Error(`HTTP error ${initialResponse.status}`);
+                    }
+                    
+                    const initialData = await initialResponse.json();
+                    
+                    // Update model filter options
+                    updateModelFilter(initialData.available_models, null);
+                    
+                    // If we have models, select the first one
+                    if (initialData.available_models && initialData.available_models.length > 0) {
+                        selectedModel = initialData.available_models[0];
+                        modelFilter.value = selectedModel;
+                        
+                        // Make a second request with the selected model
+                        const url = `/api/battery-health?model=${encodeURIComponent(selectedModel)}`;
+                        const modelResponse = await fetch(url);
+                        if (!modelResponse.ok) {
+                            throw new Error(`HTTP error ${modelResponse.status}`);
+                        }
+                        
+                        const data = await modelResponse.json();
+                        
+                        // Render the battery health chart with filtered data
+                        renderBatteryHealthChart(data.battery_health_data);
+                    } else {
+                        // No models available, show empty chart
+                        document.getElementById('battery-health-chart').innerHTML = 
+                            '<div style="text-align:center;padding:40px;color:#666;">No battery health data available</div>';
+                    }
+                } else {
+                    // We already have a selected model, use it
+                    const url = `/api/battery-health?model=${encodeURIComponent(selectedModel)}`;
+                    
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Update model filter options (but keep our current selection)
+                    updateModelFilter(data.available_models, selectedModel);
+                    
+                    // Render the battery health chart
+                    renderBatteryHealthChart(data.battery_health_data);
                 }
-                
-                const data = await response.json();
-                
-                // Update model filter options if we received them
-                updateModelFilter(data.available_models, data.model_filter);
-                
-                // Render the battery health chart
-                renderBatteryHealthChart(data.battery_health_data);
                 
             } catch (error) {
                 console.error('Error loading battery health data:', error);
