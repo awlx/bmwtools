@@ -51,7 +51,7 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             type=raw,value=pr-${{ github.head_ref || github.ref_name }},enable=${{ github.event_name == 'pull_request' }}
-            latest
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       # Build and push Docker image
       - name: Build and push Docker image
