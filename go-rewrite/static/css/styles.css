@@ -3,13 +3,14 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 body {
     line-height: 1.6;
     color: #333;
-    background-color: #f5f5f5;
+    background-color: #f8f9fa;
+    font-size: 16px;
 }
 
 .container {
@@ -20,12 +21,30 @@ body {
 
 h1, h2, h3, h4 {
     color: #1f77b4;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
+    font-weight: 600;
 }
 
 h1 {
     text-align: center;
-    margin: 20px 0;
+    margin: 25px 0;
+    font-size: 32px;
+    background: linear-gradient(45deg, #1f77b4, #2ca8ff);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    position: relative;
+}
+
+h1::after {
+    content: '';
+    display: block;
+    width: 100px;
+    height: 3px;
+    background: linear-gradient(45deg, #1f77b4, #2ca8ff);
+    margin: 10px auto 0;
+    border-radius: 3px;
 }
 
 /* Disclaimer and warning */
@@ -50,13 +69,13 @@ h1 {
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 30px;
 }
 
 .upload-container {
-    width: 50%;
-    height: 60px;
-    margin-bottom: 10px;
+    width: 60%;
+    height: 80px;
+    margin-bottom: 15px;
     position: relative;
 }
 
@@ -73,7 +92,7 @@ h1 {
     width: 100%;
     height: 100%;
     border: 2px dashed #1f77b4;
-    border-radius: 5px;
+    border-radius: 12px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -81,26 +100,36 @@ h1 {
     text-align: center;
     transition: all 0.3s ease;
     background-size: cover;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    background-color: rgba(31, 119, 180, 0.05);
 }
 
 .file-label:hover {
-    background-color: #e6f3ff;
+    background-color: rgba(31, 119, 180, 0.1);
     border-style: solid;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
 }
 
 .button {
-    background-color: #1f77b4;
+    background: linear-gradient(45deg, #1f77b4, #2ca8ff);
     color: white;
     border: none;
-    border-radius: 5px;
-    padding: 8px 16px;
+    border-radius: 8px;
+    padding: 10px 20px;
     cursor: pointer;
-    margin: 5px;
-    transition: background-color 0.3s;
+    margin: 8px;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    box-shadow: 0 4px 8px rgba(31, 119, 180, 0.3);
+    font-size: 14px;
 }
 
 .button:hover {
-    background-color: #155d8e;
+    background: linear-gradient(45deg, #166baa, #1c98eb);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(31, 119, 180, 0.4);
 }
 
 /* Date filter section */
@@ -127,7 +156,7 @@ h1 {
 
 /* Gauge charts */
 .gauge-panels {
-    margin-bottom: 30px;
+    margin-bottom: 40px;
 }
 
 .gauge-row {
@@ -135,17 +164,24 @@ h1 {
     justify-content: space-around;
     margin-bottom: 30px;
     overflow: hidden;
+    gap: 20px;
 }
 
 .gauge-chart {
-    height: 300px;
-    border: 2px solid #1f77b4;
-    border-radius: 10px;
+    height: 350px;
+    border-radius: 15px;
     flex: 1;
-    margin: 0 10px;
-    padding: 5px;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
-    background-color: #f5f5f5;
+    background-color: #ffffff;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.gauge-chart:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.08);
 }
 
 /* Providers section */
@@ -177,21 +213,34 @@ h1 {
 /* Charts */
 .chart {
     height: 400px;
-    border: 2px solid #1f77b4;
-    border-radius: 10px;
-    margin-bottom: 30px;
+    border-radius: 15px;
+    margin-bottom: 35px;
     overflow: hidden;
-    background-color: #f5f5f5;
+    background-color: #ffffff;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.chart:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.08);
 }
 
 /* Maps */
 .map {
-    height: 400px;
-    border: 2px solid #1f77b4;
-    border-radius: 10px;
-    margin-bottom: 20px;
+    height: 450px;
+    border-radius: 15px;
+    margin-bottom: 30px;
     position: relative;
     z-index: 1;
+    overflow: hidden;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.map:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.08);
 }
 
 /* Map legend styles */
