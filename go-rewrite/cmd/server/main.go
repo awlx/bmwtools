@@ -38,6 +38,7 @@ func main() {
 	r.GET("/api/session/:id", apiHandler.GetSession)
 	r.GET("/api/map", apiHandler.GetMapData)
 	r.GET("/api/grouped-providers", apiHandler.GetGroupedProviders)
+	r.GET("/api/version", apiHandler.GetVersion)
 
 	// Static file serving for the frontend
 	r.StaticFS("/static", http.Dir("./static"))

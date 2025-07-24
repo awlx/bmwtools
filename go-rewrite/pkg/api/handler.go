@@ -10,6 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// AppVersion is the current version of the application
+const AppVersion = "1.0.0"
+
 // Handler handles API requests
 type Handler struct {
 	dataManager *data.Manager
@@ -20,6 +23,13 @@ func NewHandler(dataManager *data.Manager) *Handler {
 	return &Handler{
 		dataManager: dataManager,
 	}
+}
+
+// GetVersion returns the current application version
+func (h *Handler) GetVersion(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"version": AppVersion,
+	})
 }
 
 // UploadJSON handles JSON file uploads
