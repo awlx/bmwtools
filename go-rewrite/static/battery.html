@@ -127,7 +127,7 @@
         <section class="battery-health-container">
             <div class="battery-info-box">
                 <h3>About Battery Capacity Measurements</h3>
-                <p>The chart below shows battery capacity estimates based on charging sessions plotted against vehicle mileage. Points represent individual measurements, while the blue line shows the monthly average trend.</p>
+                <p>The chart below shows battery capacity estimates based on charging sessions plotted against vehicle mileage. Points represent individual measurements, while the blue line shows the linear average capacity trend at each mileage point.</p>
                 <p>A healthy battery will show gradual capacity decline with increasing mileage. Sudden drops may indicate calibration issues rather than actual capacity loss.</p>
             </div>
             
@@ -138,7 +138,7 @@
                 </div>
                 <div class="legend-item">
                     <span class="legend-color" style="background-color: #3498db;"></span>
-                    <span>Monthly Average Trend</span>
+                    <span>Average at Current Kilometers</span>
                 </div>
             </div>
             
@@ -244,6 +244,7 @@
             const rawPoints = batteryData.filter(item => !item.is_monthly_average).sort((a, b) => 
                 a.mileage - b.mileage);
                 
+            // Sort trend points by mileage for a proper kilometers-based trend line
             const trendPoints = batteryData.filter(item => item.is_monthly_average).sort((a, b) => 
                 a.mileage - b.mileage);
             
@@ -254,21 +255,35 @@
             const rawModels = rawPoints.map(p => p.model || 'Unknown');
             const rawDates = rawPoints.map(p => new Date(p.date));
             
+            // Process trend points to create proper series
+            // Group by model to create separate trend lines
+            const modelGroups = {};
+            trendPoints.forEach(p => {
+                const model = p.model || 'Unknown';
+                if (!modelGroups[model]) {
+                    modelGroups[model] = [];
+                }
+                modelGroups[model].push(p);
+            });
+            
+            // For each model, sort by mileage
+            Object.keys(modelGroups).forEach(model => {
+                modelGroups[model].sort((a, b) => a.mileage - b.mileage);
+            });
+            
+            // Now create the trend data
             const trendX = trendPoints.map(p => p.mileage);
             const trendY = trendPoints.map(p => p.avg_capacity);
             const trendModels = trendPoints.map(p => p.model || 'Unknown');
             const trendDates = trendPoints.map(p => new Date(p.date));
             
-            // Create hover text
+            // Create hover text - hide dates from individual points
             const rawHovertext = rawPoints.map((p, i) => {
-                const date = new Date(p.date).toLocaleDateString();
-                return `Model: ${rawModels[i]}<br>Date: ${date}<br>Mileage: ${p.mileage.toLocaleString()} km<br>Capacity: ${p.estimated_capacity.toFixed(1)} kWh<br>SOC Change: ${p.soc_change.toFixed(1)}%`;
+                return `Model: ${rawModels[i]}<br>Mileage: ${p.mileage.toLocaleString()} km<br>Capacity: ${p.estimated_capacity.toFixed(1)} kWh<br>SOC Change: ${p.soc_change.toFixed(1)}%`;
             });
             
             const trendHovertext = trendPoints.map((p, i) => {
-                const date = new Date(p.date).toLocaleDateString();
-                const month = p.month;
-                return `Model: ${trendModels[i]}<br>Month: ${month}<br>Avg Mileage: ${p.mileage.toLocaleString()} km<br>Avg Capacity: ${p.avg_capacity.toFixed(1)} kWh<br>Data Points: ${p.data_points}`;
+                return `Model: ${trendModels[i]}<br>Mileage: ${p.mileage.toLocaleString()} km<br>Avg Capacity: ${p.avg_capacity.toFixed(1)} kWh<br>Data Points: ${p.data_points}`;
             });
             
             // Create traces
@@ -295,10 +310,11 @@
                 y: trendY,
                 mode: 'lines+markers',
                 type: 'scatter',
-                name: 'Monthly Average',
+                name: 'Average at Current Kilometers',
                 line: {
                     color: '#3498db',
-                    width: 3
+                    width: 3,
+                    shape: 'linear'  // Use linear trend line as requested
                 },
                 marker: {
                     size: 8,
@@ -316,13 +332,14 @@
                 },
                 xaxis: {
                     title: 'Mileage (km)',
-                    tickformat: ',d'
+                    tickformat: ',d',
+                    autorange: true  // Let Plotly determine the best range
                 },
                 yaxis: {
                     title: 'Estimated Capacity (kWh)',
                     range: [
-                        Math.min(...rawY, ...trendY) * 0.9, 
-                        Math.max(...rawY, ...trendY) * 1.05
+                        Math.min(...rawY, ...trendY) * 0.95,  // Less aggressive scaling for better visualization
+                        Math.max(...rawY, ...trendY) * 1.03
                     ]
                 },
                 hovermode: 'closest',

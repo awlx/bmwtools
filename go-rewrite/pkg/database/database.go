@@ -318,6 +318,18 @@ func (m *Manager) StoreSessions(sessions []data.Session, filename string, userSp
 
 // GetAvailableModels returns a list of available BMW models in the database
 func (m *Manager) GetAvailableModels() ([]string, error) {
+	// First check if the table exists
+	var tableExists int
+	err := m.db.QueryRow(`SELECT count(name) FROM sqlite_master WHERE type='table' AND name='vehicles'`).Scan(&tableExists)
+	if err != nil {
+		return nil, fmt.Errorf("error checking if vehicles table exists: %w", err)
+	}
+
+	if tableExists == 0 {
+		// Table doesn't exist, return empty result instead of error
+		return []string{}, nil
+	}
+
 	rows, err := m.db.Query("SELECT DISTINCT model FROM vehicles WHERE model IS NOT NULL ORDER BY model")
 	if err != nil {
 		return nil, err
@@ -340,6 +352,18 @@ func (m *Manager) GetAvailableModels() ([]string, error) {
 
 // GetFleetBatteryHealth returns battery health data for the fleet
 func (m *Manager) GetFleetBatteryHealth(modelFilter string) ([]map[string]interface{}, error) {
+	// First check if the table exists
+	var tableExists int
+	err := m.db.QueryRow(`SELECT count(name) FROM sqlite_master WHERE type='table' AND name='battery_health'`).Scan(&tableExists)
+	if err != nil {
+		return nil, fmt.Errorf("error checking if battery_health table exists: %w", err)
+	}
+
+	if tableExists == 0 {
+		// Table doesn't exist, return empty result instead of error
+		return []map[string]interface{}{}, nil
+	}
+
 	query := `
 		SELECT 
 			bh.date, 
@@ -392,6 +416,18 @@ func (m *Manager) GetFleetBatteryHealth(modelFilter string) ([]map[string]interf
 
 // GetMonthlyBatteryHealthTrend returns the monthly aggregated battery health trend
 func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string]interface{}, error) {
+	// First check if the table exists
+	var tableExists int
+	err := m.db.QueryRow(`SELECT count(name) FROM sqlite_master WHERE type='table' AND name='battery_health'`).Scan(&tableExists)
+	if err != nil {
+		return nil, fmt.Errorf("error checking if battery_health table exists: %w", err)
+	}
+
+	if tableExists == 0 {
+		// Table doesn't exist, return empty result instead of error
+		return []map[string]interface{}{}, nil
+	}
+
 	query := `
 		SELECT 
 			strftime('%Y-%m', bh.date) as month,
@@ -410,7 +446,7 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 		args = append(args, modelFilter)
 	}
 
-	query += " GROUP BY strftime('%Y-%m', bh.date), v.model ORDER BY month"
+	query += " GROUP BY strftime('%Y-%m', bh.date), v.model ORDER BY avg_mileage"
 
 	rows, err := m.db.Query(query, args...)
 	if err != nil {
