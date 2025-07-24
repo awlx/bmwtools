@@ -47,6 +47,37 @@ function setupEventListeners() {
     toggleUnitsBtn.addEventListener('click', toggleUnits);
     sessionDropdownEl.addEventListener('change', handleSessionSelection);
     
+    // Set up drag and drop events for the upload container
+    const uploadContainer = document.querySelector('.upload-container');
+    const fileLabel = document.querySelector('.file-label');
+    
+    if (uploadContainer && fileLabel) {
+        // Prevent default behavior to allow drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadContainer.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        // Add visual feedback for drag events
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadContainer.addEventListener(eventName, () => {
+                fileLabel.style.backgroundColor = '#e6f3ff';
+                fileLabel.style.borderStyle = 'solid';
+                fileLabel.style.borderColor = '#1f77b4';
+            }, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadContainer.addEventListener(eventName, () => {
+                fileLabel.style.backgroundColor = '';
+                fileLabel.style.borderStyle = 'dashed';
+                fileLabel.style.borderColor = '#1f77b4';
+            }, false);
+        });
+        
+        // Handle the dropped files
+        uploadContainer.addEventListener('drop', handleDrop, false);
+    }
+    
     // Function to adjust the similarity threshold
     window.setProviderSimilarityThreshold = function(threshold) {
         if (threshold >= 0 && threshold <= 1) {
@@ -60,13 +91,38 @@ function setupEventListeners() {
     };
 }
 
-// Toggle debug mode and refresh data
+// Prevent default drag behaviors
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
 
+// Handle drop event
+async function handleDrop(event) {
+    const dt = event.dataTransfer;
+    const files = dt.files;
+    
+    if (files.length) {
+        const file = files[0];
+        // Use the same upload process as the file input
+        await uploadFile(file);
+    }
+}
 
 // Handle file upload
 async function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
+    await uploadFile(file);
+}
+
+// Generic file upload function
+async function uploadFile(file) {
+    // Check if file name contains the expected pattern
+    if (!file.name.includes('BMW-CarData-Ladehistorie_')) {
+        const proceed = confirm("The file doesn't match the expected pattern 'BMW-CarData-Ladehistorie_*'. Are you sure you want to upload it?");
+        if (!proceed) return;
+    }
 
     const formData = new FormData();
     formData.append('file', file);
