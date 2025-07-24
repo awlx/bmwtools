@@ -118,7 +118,6 @@
             <div>
                 <label for="model-filter">Filter by Model:</label>
                 <select id="model-filter">
-                    <option value="">All Models</option>
                     <!-- Will be populated dynamically -->
                 </select>
             </div>
@@ -207,10 +206,8 @@
             // Save current selection
             const currentValue = currentSelection || modelFilter.value;
             
-            // Clear existing options except the "All Models" option
-            while (modelFilter.options.length > 1) {
-                modelFilter.remove(1);
-            }
+            // Clear all existing options
+            modelFilter.innerHTML = '';
             
             // Add new options
             models.forEach(model => {
@@ -230,6 +227,9 @@
                         break;
                     }
                 }
+            } else if (modelFilter.options.length > 0) {
+                // Select first option if no current selection
+                modelFilter.selectedIndex = 0;
             }
         }
         
