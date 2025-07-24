@@ -2,26 +2,30 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/awlx/bmwtools/pkg/data"
+	"github.com/awlx/bmwtools/pkg/database"
 	"github.com/gin-gonic/gin"
 )
 
 // AppVersion is the current version of the application
-const AppVersion = "1.0.0"
+const AppVersion = "1.0.1"
 
 // Handler handles API requests
 type Handler struct {
 	dataManager *data.Manager
+	dbManager   *database.Manager
 }
 
 // NewHandler creates a new API handler
-func NewHandler(dataManager *data.Manager) *Handler {
+func NewHandler(dataManager *data.Manager, dbManager *database.Manager) *Handler {
 	return &Handler{
 		dataManager: dataManager,
+		dbManager:   dbManager,
 	}
 }
 
@@ -32,27 +36,134 @@ func (h *Handler) GetVersion(c *gin.Context) {
 	})
 }
 
+// GetAnonymousStats returns anonymous statistics about charging sessions
+func (h *Handler) GetAnonymousStats(c *gin.Context) {
+	// Check if we have a database manager
+	if h.dbManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database not initialized"})
+		return
+	}
+
+	// Get provider stats from database
+	providerStats, err := h.dbManager.GetProviderStats()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error fetching provider stats: %v", err)})
+		return
+	}
+
+	// Get SOC statistics from database
+	socStats, err := h.dbManager.GetSOCStats()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error fetching SOC stats: %v", err)})
+		return
+	}
+
+	// Calculate global statistics
+	var totalSessions, totalSuccessful, totalFailed int
+	var totalEnergyAdded float64
+
+	for _, provider := range providerStats {
+		totalSessions += provider["total_sessions"].(int)
+		totalSuccessful += provider["successful_sessions"].(int)
+		totalFailed += provider["failed_sessions"].(int)
+		totalEnergyAdded += provider["total_energy_added"].(float64)
+	}
+
+	// Calculate global success rate
+	globalSuccessRate := 0.0
+	if totalSessions > 0 {
+		globalSuccessRate = float64(totalSuccessful) / float64(totalSessions) * 100
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"providers": providerStats,
+		"global_stats": map[string]interface{}{
+			"total_sessions":      totalSessions,
+			"successful_sessions": totalSuccessful,
+			"failed_sessions":     totalFailed,
+			"success_rate":        globalSuccessRate,
+			"total_energy_added":  totalEnergyAdded,
+		},
+		"soc_stats": socStats,
+	})
+}
+
 // UploadJSON handles JSON file uploads
 func (h *Handler) UploadJSON(c *gin.Context) {
 	// Get the file from the request
-	file, _, err := c.Request.FormFile("file")
+	file, fileHeader, err := c.Request.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
 		return
 	}
 	defer file.Close()
 
-	// Process the file
+	// Process the file with the data manager
 	err = h.dataManager.LoadJSON(file)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Error processing JSON: %v", err)})
 		return
 	}
 
-	// Return success
+	// Get the processed sessions
+	sessions := h.dataManager.GetSessions()
+
+	// Check for consent to store in fleet statistics database
+	consentParam := c.PostForm("consent")
+	hasConsent := consentParam == "true" || consentParam == "1" || consentParam == "yes"
+
+	// Get the BMW model if provided
+	model := c.PostForm("model")
+
+	// Store sessions in the database if consent was given
+	isNew := false
+	var storedCount int
+	if h.dbManager != nil && hasConsent {
+		// Validate model parameter is provided when consent is given
+		if model == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "BMW model selection is required when sharing data"})
+			return
+		}
+
+		var err error
+		isNew, err = h.dbManager.StoreSessions(sessions, fileHeader.Filename, model)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error storing sessions in database: %v", err)})
+			return
+		}
+
+		// Query the database to get an accurate count of stored sessions
+		// This ensures that the count shown in the UI matches what's actually in the database
+		var countErr error
+		storedCount, countErr = h.dbManager.GetSessionCount()
+		if countErr != nil {
+			log.Printf("Warning: Unable to get session count: %v", countErr)
+			storedCount = len(sessions) // Fallback to local count if query fails
+		}
+
+		// If this was a duplicate upload, notify the user
+		if !isNew {
+			c.JSON(http.StatusOK, gin.H{
+				"message":      "This file has already been processed previously",
+				"count":        len(sessions),
+				"new":          false,
+				"stored":       hasConsent,
+				"stored_count": storedCount,
+			})
+			return
+		}
+	} // Return success with appropriate message based on consent
+	message := "File uploaded and processed successfully"
+	if !hasConsent {
+		message = "File uploaded and processed (not stored in fleet statistics)"
+		storedCount = 0
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"message": "File uploaded and processed successfully",
-		"count":   len(h.dataManager.GetSessions()),
+		"message":      message,
+		"count":        len(sessions),
+		"new":          true,
+		"stored":       hasConsent,
+		"stored_count": storedCount,
 	})
 }
 
@@ -73,10 +184,18 @@ func (h *Handler) LoadDemoData(c *gin.Context) {
 		return
 	}
 
+	// Get the processed sessions
+	sessions := h.dataManager.GetSessions()
+
+	// Demo data is intentionally NOT stored in the database
+	// This is because demo data is just for testing/preview and shouldn't
+	// pollute the actual fleet statistics
+
 	// Return success
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Demo data loaded successfully",
-		"count":   len(h.dataManager.GetSessions()),
+		"message": "Demo data loaded successfully (not stored in database)",
+		"count":   len(sessions),
+		"demo":    true,
 	})
 }
 
