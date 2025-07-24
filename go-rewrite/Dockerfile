@@ -1,6 +1,9 @@
 # Build stage
 FROM golang:1.22-alpine AS builder
 
+# Install build dependencies including gcc and required libraries
+RUN apk add --no-cache gcc musl-dev
+
 WORKDIR /app
 
 # Copy go mod and sum files
