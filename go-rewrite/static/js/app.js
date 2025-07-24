@@ -2673,6 +2673,8 @@ function createRangeMap() {
     const mapContainer = document.getElementById(mapContainerId);
     if (!mapContainer) return;
     
+    console.log("Creating range map - container found:", mapContainer);
+    
     // Replace the map container with a new one
     const parentElement = mapContainer.parentElement;
     const oldContainer = document.getElementById(mapContainerId);
@@ -2689,6 +2691,7 @@ function createRangeMap() {
         
         // Add the new container to the parent
         parentElement.appendChild(newContainer);
+        console.log("Map container recreated");
     }
     
     // Create map focused on current session location
