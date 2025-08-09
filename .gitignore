@@ -1,6 +1,7 @@
-*.html
+
 *.json
 bmwtools-server
+go-rewrite/data/bmwtools.db
 go-rewrite/bmwtools-server
 go-rewrite/traefik/*
 go-rewrite/pkg/data/real_data_test.go

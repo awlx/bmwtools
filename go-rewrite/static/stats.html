@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMW CarData - Anonymous Charging Statistics</title>
+    <!-- CSS will be loaded dynamically with cache busting -->
+    <!-- Include Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    
+    <!-- Cache busting script - load this before other resources -->
+    <script>
+        // Immediate-invoking function to set up cache busting
+        (function() {
+            // First attempt to get version from API
+            fetch('/api/version')
+                .then(response => response.json())
+                .then(data => {
+                    loadResources(data.version);
+                })
+                .catch(error => {
+                    console.error('Error fetching version:', error);
+                    // Fallback to timestamp
+                    loadResources(new Date().getTime());
+                });
+                
+            function loadResources(version) {
+                // Create and append CSS link with version
+                // Load main CSS
+                const cssLink = document.createElement('link');
+                cssLink.rel = 'stylesheet';
+                cssLink.href = `/static/css/styles.css?v=${version}`;
+                document.head.appendChild(cssLink);
+                
+                // Load navigation CSS
+                const navCssLink = document.createElement('link');
+                navCssLink.rel = 'stylesheet';
+                navCssLink.href = `/static/css/nav.css?v=${version}`;
+                document.head.appendChild(navCssLink);
+                
+                // Store version for later use when loading JS
+                window.APP_CACHE_VERSION = version;
+            }
+        })();
+    </script>
+    
+    <style>
+        /* Additional styles specific to the statistics page */
+        .stats-card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .stats-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+        }
+        
+        .stats-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .stats-count {
+            font-size: 36px;
+            font-weight: bold;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        }
+        
+        .stats-label {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .stats-table th, .stats-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .stats-table th {
+            font-weight: 600;
+            color: #333;
+            background-color: #f8f9fa;
+        }
+        
+        .stats-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .success-rate {
+            font-weight: bold;
+        }
+        
+        .success-high {
+            color: #2ecc71;
+        }
+        
+        .success-medium {
+            color: #f39c12;
+        }
+        
+        .success-low {
+            color: #e74c3c;
+        }
+        
+        .chart-container {
+            height: 580px;
+            margin-bottom: 40px;
+            overflow: visible !important; /* Allow text labels to overflow */
+        }
+        
+        /* Additional responsive adjustments for charts */
+        @media (max-width: 768px) {
+            .chart-container {
+                height: 450px;
+            }
+        }
+        
+        .notice {
+            text-align: center;
+            color: #666;
+            margin: 40px 0;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>BMW CarData - Anonymous Charging Statistics</h1>
+            <nav class="main-nav">
+                <ul>
+                    <li><a href="/">Dashboard</a></li>
+                    <li class="active"><a href="/stats">Anonymous Stats</a></li>
+                    <li><a href="/battery">Fleet Battery Health</a></li>
+                </ul>
+            </nav>
+            <p class="notice">This dashboard shows anonymous statistics from all uploaded charging sessions. No personal data or locations are stored.</p>
+        </header>
+
+        <section class="global-stats">
+            <h2>Global Statistics</h2>
+            <div class="stats-grid">
+                <div class="stats-card">
+                    <div class="stats-header">
+                        <h3>Total Sessions</h3>
+                        <span class="icon">📊</span>
+                    </div>
+                    <div class="stats-count" id="total-sessions-count">-</div>
+                    <div class="stats-label">Charging sessions analyzed</div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-header">
+                        <h3>Success Rate</h3>
+                        <span class="icon">✅</span>
+                    </div>
+                    <div class="stats-count" id="success-rate">-</div>
+                    <div class="stats-label">Sessions that successfully added charge</div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-header">
+                        <h3>Total Energy</h3>
+                        <span class="icon">⚡</span>
+                    </div>
+                    <div class="stats-count" id="total-energy">-</div>
+                    <div class="stats-label">Total kWh added to vehicles</div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-header">
+                        <h3>SOC Statistics</h3>
+                        <span class="icon">🔋</span>
+                    </div>
+                    <div class="stats-grid" style="grid-template-columns: 1fr 1fr; margin-top: 10px;">
+                        <div>
+                            <div class="stats-label">Avg Start SOC</div>
+                            <div class="stats-count" style="font-size: 24px;" id="avg-start-soc">-</div>
+                        </div>
+                        <div>
+                            <div class="stats-label">Avg End SOC</div>
+                            <div class="stats-count" style="font-size: 24px;" id="avg-end-soc">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="chart-section">
+            <h2>Provider Failure Rates</h2>
+            <div id="provider-failure-chart" class="chart-container stats-card"></div>
+        </section>
+        
+        <section class="chart-section">
+            <h2>Session Outcomes</h2>
+            <div id="session-outcomes-chart" class="chart-container stats-card"></div>
+        </section>
+        
+        <section class="chart-section">
+            <h2>Energy Distribution by Provider</h2>
+            <div id="energy-by-provider-chart" class="chart-container stats-card"></div>
+        </section>
+
+        <section class="providers-stats">
+            <h2>Charging Provider Statistics</h2>
+            <div class="stats-card">
+                <p>Detailed statistics for each charging provider, showing success rates and energy metrics.</p>
+                <div class="table-container">
+                    <table class="stats-table" id="provider-stats-table">
+                        <thead>
+                            <tr>
+                                <th>Provider</th>
+                                <th>Sessions</th>
+                                <th>Successful</th>
+                                <th>Failed</th>
+                                <th>Success Rate</th>
+                                <th>Avg Efficiency</th>
+                                <th>Energy Added (kWh)</th>
+                                <th>Avg Power (kW)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="8" style="text-align: center;">Loading data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+        
+        <div class="button-container" style="text-align: center; margin: 30px 0;">
+            <a href="/" class="button">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <footer>
+        <div class="imprint">
+            <h3>Impressum</h3>
+            <p>Freie Netze München e. V.</p>
+            <p>Parkstraße 28</p>
+            <p>82131 Gauting</p>
+        </div>
+    </footer>
+
+    <!-- Main app script is loaded with version from cache busting script -->
+    <script>
+        // Create script element with proper version for stats.js
+        const scriptElement = document.createElement('script');
+        // Use the version that was set by the cache busting script at the top of the page
+        // or fallback to current timestamp if not available
+        const version = window.APP_CACHE_VERSION || new Date().getTime();
+        scriptElement.src = `/static/js/stats.js?v=${version}`;
+        
+        // Make sure to wait for the script to load
+        scriptElement.onload = function() {
+            console.log('BMW Tools stats.js loaded successfully');
+        };
+        
+        scriptElement.onerror = function() {
+            console.error('Failed to load BMW Tools stats.js');
+        };
+        
+        document.body.appendChild(scriptElement);
+        
+        // Log the version being used
+        console.log('BMW Tools version:', version);
+    </script>
+</body>
+</html>
