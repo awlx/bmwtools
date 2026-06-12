@@ -480,7 +480,7 @@ func (h *Handler) GetMapData(c *gin.Context) {
 		// Create a key for the location based on coordinates (rounded to avoid floating point issues)
 		locationKey := fmt.Sprintf("%.5f:%.5f", s.Latitude, s.Longitude)
 
-		isFailedSession := s.SocEnd == s.SocStart
+		isFailedSession := s.Failed
 
 		if _, exists := locationMap[locationKey]; !exists {
 			locationMap[locationKey] = &locationStats{
