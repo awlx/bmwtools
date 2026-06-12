@@ -151,11 +151,14 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 			}
 			avgPower := sumPower / math.Max(float64(len(raw.ChargingBlocks)), 1)
 
-			// Use different efficiency estimates based on charging type
+			// Use different efficiency estimates based on charging type.
+			// Constants are calibrated against BMW exports that still contained
+			// the measured energyIncreaseHvbKwh: across 276 real sessions the
+			// median grid->HVB efficiency was ~0.93 for AC and ~0.97 for DC.
 			if avgPower >= 12 { // DC charging (typically >= 12kW)
-				energyIncreaseHvb = energyFromGrid * 0.98 // 98% efficiency for DC
+				energyIncreaseHvb = energyFromGrid * 0.97 // ~97% efficiency for DC
 			} else { // AC charging
-				energyIncreaseHvb = energyFromGrid * 0.92 // 92% efficiency for AC
+				energyIncreaseHvb = energyFromGrid * 0.93 // ~93% efficiency for AC
 			}
 			// This session will be marked as using estimated values
 		}
@@ -288,6 +291,22 @@ func (m *Manager) GetSessionsByDateRange(startDate, endDate time.Time) []Session
 	return filtered
 }
 
+// medianFloat returns the median of the given values. The input slice may be
+// reordered. Returns 0 for an empty slice.
+func medianFloat(values []float64) float64 {
+	n := len(values)
+	if n == 0 {
+		return 0
+	}
+	s := make([]float64, n)
+	copy(s, values)
+	sort.Float64s(s)
+	if n%2 == 1 {
+		return s[n/2]
+	}
+	return (s[n/2-1] + s[n/2]) / 2
+}
+
 // CalculateEstimatedBatteryCapacity calculates estimated battery capacity (SoH)
 func (m *Manager) CalculateEstimatedBatteryCapacity() []map[string]interface{} {
 	estimatedBatteryCapacity := make([]map[string]interface{}, 0)
@@ -305,30 +324,75 @@ func (m *Manager) CalculateEstimatedBatteryCapacity() []map[string]interface{} {
 	var dataPoints []capacityDataPoint
 	monthlyBuckets := make(map[string][]capacityDataPoint)
 
-	// First pass: collect all valid data points
+	// Tunables for what counts as a reliable capacity sample.
+	const (
+		minSocChange      = 25.0  // %; larger swings keep the integer-SoC rounding error small
+		absMinCapacityKwh = 10.0  // loose sanity floor (drops obvious garbage)
+		absMaxCapacityKwh = 250.0 // loose sanity ceiling; high enough for any real EV pack
+		madRejectK        = 3.0   // reject points more than k robust-sigma from the median
+		relBandLow        = 0.60  // and/or outside this fraction of the car's own median ...
+		relBandHigh       = 1.30  // ... so the band scales to the actual battery size
+	)
+
+	// First pass: collect candidate points. Capacity is the full-pack capacity
+	// extrapolated from a single charge: energyAddedHvb scaled up to 100% SoC.
+	// We gate on the SoC swing (not an absolute energy floor) so AC home charges
+	// count too, and only drop values outside a very loose absolute band here.
+	candidates := make([]capacityDataPoint, 0, len(m.sessions))
 	for _, session := range m.sessions {
-		if session.EnergyAddedHvb >= 30 {
-			socChange := session.SocEnd - session.SocStart
-			if socChange >= 20 { // Significant change for more reliable calculations
-				estimatedCapacity := (session.EnergyAddedHvb * 100) / socChange
-				// Convert time to days since epoch for linear regression
-				daysSinceEpoch := float64(session.StartTime.Unix()) / (60 * 60 * 24)
-				// Format year-month for bucketing (e.g., "2023-01")
-				yearMonth := session.StartTime.Format("2006-01")
-
-				dp := capacityDataPoint{
-					date:           session.StartTime,
-					timestamp:      daysSinceEpoch,
-					capacity:       estimatedCapacity,
-					socChange:      socChange,
-					energyAddedHvb: session.EnergyAddedHvb,
-					yearMonth:      yearMonth,
-				}
-
-				dataPoints = append(dataPoints, dp)
-				monthlyBuckets[yearMonth] = append(monthlyBuckets[yearMonth], dp)
-			}
+		socChange := session.SocEnd - session.SocStart
+		if session.EnergyAddedHvb <= 0 || socChange < minSocChange {
+			continue
 		}
+		estimatedCapacity := (session.EnergyAddedHvb * 100) / socChange
+		if estimatedCapacity < absMinCapacityKwh || estimatedCapacity > absMaxCapacityKwh {
+			continue
+		}
+		candidates = append(candidates, capacityDataPoint{
+			date:           session.StartTime,
+			timestamp:      float64(session.StartTime.Unix()) / (60 * 60 * 24),
+			capacity:       estimatedCapacity,
+			socChange:      socChange,
+			energyAddedHvb: session.EnergyAddedHvb,
+			yearMonth:      session.StartTime.Format("2006-01"),
+		})
+	}
+
+	// Robust outlier rejection. Physically impossible spikes (SoC misreads,
+	// interrupted/merged sessions, preconditioning energy) otherwise drag the
+	// curve around. We reject relative to the data itself: the median pack
+	// capacity and its MAD, plus a band that scales with that median, so a
+	// >100 kWh battery is judged against its own size rather than a fixed number.
+	if len(candidates) >= 5 {
+		caps := make([]float64, len(candidates))
+		for i, dp := range candidates {
+			caps[i] = dp.capacity
+		}
+		med := medianFloat(caps)
+		dev := make([]float64, len(caps))
+		for i, c := range caps {
+			dev[i] = math.Abs(c - med)
+		}
+		mad := medianFloat(dev)
+		robustSigma := 1.4826 * mad
+		lowAbs := med * relBandLow
+		highAbs := med * relBandHigh
+		kept := candidates[:0]
+		for _, dp := range candidates {
+			if robustSigma > 0 && math.Abs(dp.capacity-med) > madRejectK*robustSigma {
+				continue
+			}
+			if dp.capacity < lowAbs || dp.capacity > highAbs {
+				continue
+			}
+			kept = append(kept, dp)
+		}
+		candidates = kept
+	}
+
+	for _, dp := range candidates {
+		dataPoints = append(dataPoints, dp)
+		monthlyBuckets[dp.yearMonth] = append(monthlyBuckets[dp.yearMonth], dp)
 	}
 
 	// Calculate monthly averages first
