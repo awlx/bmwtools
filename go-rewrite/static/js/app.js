@@ -1141,11 +1141,14 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
 
 // Render a breakdown of the most common charging errors (from BMW
 // businessErrors) in its own panel below the session gauges, if any exist.
-function renderFailureReasons(reasons, affectedSessions) {
+function renderFailureReasons(reasons, affectedSessions, totalFailed) {
     const container = document.getElementById('charging-errors-breakdown');
     if (!container) return;
     container.innerHTML = '';
-    if (!reasons || reasons.length === 0) return;
+    const reasonList = reasons || [];
+    const noReason = Math.max((totalFailed || 0) - (affectedSessions || 0), 0);
+    // Nothing to show if there were neither reported reasons nor unexplained aborts.
+    if (reasonList.length === 0 && noReason === 0) return;
 
     const box = document.createElement('div');
     box.className = 'failure-reasons-breakdown';
@@ -1156,18 +1159,33 @@ function renderFailureReasons(reasons, affectedSessions) {
     box.style.boxShadow = '0 10px 20px rgba(0,0,0,0.05)';
 
     const title = document.createElement('div');
-    title.textContent = affectedSessions
-        ? `Most common charging errors (${affectedSessions} affected sessions)`
-        : 'Most common charging errors';
+    title.textContent = 'Most common charging errors';
     title.style.fontSize = '18px';
     title.style.fontWeight = '600';
     title.style.color = '#444';
-    title.style.marginBottom = '14px';
+    title.style.marginBottom = '4px';
     box.appendChild(title);
 
-    const maxCount = reasons.reduce((m, r) => Math.max(m, r.count), 0) || 1;
+    // Be explicit that the breakdown only covers failures BMW gave a reason for;
+    // many aborts are reported without any reason at all.
+    if (totalFailed) {
+        const subtitle = document.createElement('div');
+        subtitle.textContent = noReason > 0
+            ? `${affectedSessions} of ${totalFailed} failed sessions reported a reason — the other ${noReason} aborted without one`
+            : `All ${totalFailed} failed sessions reported a reason`;
+        subtitle.style.fontSize = '13px';
+        subtitle.style.color = '#888';
+        subtitle.style.marginBottom = '14px';
+        box.appendChild(subtitle);
+    }
 
-    reasons.forEach(r => {
+    const maxCount = Math.max(
+        reasonList.reduce((m, r) => Math.max(m, r.count), 0),
+        noReason,
+        1
+    );
+
+    const renderRow = (labelText, value, color) => {
         const row = document.createElement('div');
         row.style.marginBottom = '10px';
 
@@ -1178,11 +1196,11 @@ function renderFailureReasons(reasons, affectedSessions) {
         head.style.color = '#555';
         head.style.marginBottom = '4px';
         const label = document.createElement('span');
-        label.textContent = r.reason;
+        label.textContent = labelText;
         const count = document.createElement('span');
-        count.textContent = r.count;
+        count.textContent = value;
         count.style.fontWeight = '600';
-        count.style.color = '#c0392b';
+        count.style.color = color;
         head.appendChild(label);
         head.appendChild(count);
 
@@ -1193,15 +1211,23 @@ function renderFailureReasons(reasons, affectedSessions) {
         track.style.overflow = 'hidden';
         const bar = document.createElement('div');
         bar.style.height = '100%';
-        bar.style.width = `${(r.count / maxCount) * 100}%`;
-        bar.style.backgroundColor = '#EF5350';
+        bar.style.width = `${(value / maxCount) * 100}%`;
+        bar.style.backgroundColor = color;
         bar.style.transition = 'width 0.8s ease-in-out';
         track.appendChild(bar);
 
         row.appendChild(head);
         row.appendChild(track);
         box.appendChild(row);
-    });
+    };
+
+    reasonList.forEach(r => renderRow(r.reason, r.count, '#EF5350'));
+
+    // A neutral row for aborts BMW did not attribute to any reason.
+    if (noReason > 0) {
+        renderRow('No reason reported', noReason, '#b0b0b0');
+    }
+
     container.appendChild(box);
 }
 
@@ -1273,7 +1299,7 @@ function createSessionStatsGauges(sessionStats) {
     createSessionStatCard('successful-sessions-gauge', successfulSessions, totalSessions, 'Successful Sessions', '#66BB6A', '✅');
 
     // Show the most common charging errors (from BMW businessErrors) when present.
-    renderFailureReasons(sessionStats.error_breakdown || [], sessionStats.sessions_with_errors || 0);
+    renderFailureReasons(sessionStats.error_breakdown || [], sessionStats.sessions_with_errors || 0, sessionStats.total_failed_sessions || 0);
     
     // Helper function to create a modern stat card
     function createSessionStatCard(elementId, value, total, title, color, icon) {
