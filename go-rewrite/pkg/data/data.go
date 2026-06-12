@@ -64,7 +64,7 @@ type Session struct {
 	MileageUnit         string          `json:"mileage_unit"`          // "KM" or "MI"
 	ChargingBlocks      []ChargingBlock `json:"charging_blocks"`       // per-block power curve
 	ErrorHints          []string        `json:"error_hints"`           // reported charging-fault hints
-	Failed              bool            `json:"failed"`                // no energy delivered / no SoC gain
+	Failed              bool            `json:"failed"`                // did not keep charging (SoC gain < threshold)
 }
 
 // RawSession is the raw BMW CarData format
@@ -211,10 +211,14 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 				errorHints = append(errorHints, be.Hint)
 			}
 		}
-		// A session counts as failed when no energy was delivered and the battery
-		// did not gain any charge. Error hints alone don't mean failure: many
-		// sessions report a transient hint but still charge successfully.
-		failed := energyFromGrid <= 0 && socEnd <= socStart
+		// A session counts as failed when it did not actually keep charging: it
+		// gained less than minContinuedSocChange %. A session that recovers from a
+		// transient fault and continues charging stays above the threshold and is
+		// treated as successful, while a charge that stops after little or no gain
+		// — whether a new session starts right after or it never resumes — counts
+		// as a failure. Error hints alone don't mean failure: many sessions report
+		// a transient hint but keep charging.
+		failed := (socEnd - socStart) < minContinuedSocChange
 
 		provider := "Unknown"
 		if len(raw.PublicChargingPoint.PotentialChargingPointMatches) > 0 {
@@ -306,6 +310,14 @@ func medianFloat(values []float64) float64 {
 	}
 	return (s[n/2-1] + s[n/2]) / 2
 }
+
+// minContinuedSocChange is the minimum SoC gain (in %) for a charging session to
+// count as having actually charged. A session that gains less than this is
+// treated as a failure/abort: it stopped after little or no charge, was
+// immediately retried by a new session, or never resumed. Sessions that recover
+// from a transient fault and keep charging exceed this threshold and remain
+// successful.
+const minContinuedSocChange = 3.0
 
 // CalculateEstimatedBatteryCapacity calculates estimated battery capacity (SoH)
 func (m *Manager) CalculateEstimatedBatteryCapacity() []map[string]interface{} {
@@ -604,7 +616,7 @@ func (m *Manager) CalculateSOCStatistics() map[string]interface{} {
 	for _, session := range m.sessions {
 		totalSessions++
 
-		if session.SocEnd == session.SocStart {
+		if session.Failed {
 			failedSessions++
 			continue
 		}
@@ -692,7 +704,7 @@ func (m *Manager) GetSessionStats() map[string]interface{} {
 				errorReasons[normalizeHint(h)]++
 			}
 		}
-		if session.SocEnd == session.SocStart {
+		if session.Failed {
 			totalFailedSessions++
 			failedProviders[session.Provider]++
 			for _, h := range session.ErrorHints {
