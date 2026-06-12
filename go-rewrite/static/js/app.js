@@ -7,54 +7,98 @@ let currentSession = null;
 let useMiles = false;
 let chargingLocationsMap = null;
 
-// Define a modern Plotly template with enhanced styling
-const plotlyTemplate = {
-    layout: {
-        paper_bgcolor: '#ffffff',
-        plot_bgcolor: '#ffffff',
-        font: {
-            family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-            color: '#444',
-            size: 12
-        },
-        title: {
+// Minimal line-icon set (stroke = currentColor) used in metric/summary cards
+// in place of emoji, for a cleaner, more professional appearance.
+const ICON_PATHS = {
+    bolt: '<path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z"/>',
+    chart: '<path d="M4 20V12M9.3 20V6M14.7 20v-8M20 20V9"/>',
+    battery: '<rect x="3" y="8" width="15" height="8" rx="2"/><path d="M21 11.5v3"/><path d="M6.5 10.5v3M9.5 10.5v3"/>',
+    plug: '<path d="M9 2v6M15 2v6M7 8h10v2a5 5 0 0 1-10 0zM12 15v6"/>',
+    euro: '<path d="M16.5 6.5a6 6 0 1 0 0 11M4.5 10h8M4.5 14h8"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v4M16 3v4"/>',
+    gauge: '<path d="M3.5 15a8.5 8.5 0 0 1 17 0"/><path d="M12 15l4.5-3.5"/><circle cx="12" cy="15" r="1.4"/>',
+    check: '<path d="M4.5 12.5 9.5 17.5 20 6.5"/>',
+    alert: '<path d="M12 3 22 20H2z"/><path d="M12 10v4.5M12 17.5h.01"/>',
+    cross: '<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',
+    scale: '<path d="M12 4v16M5 8h14M5 8 2.6 14a3 3 0 0 0 4.8 0zM19 8l-2.4 6a3 3 0 0 0 4.8 0z"/>'
+};
+
+function svgIcon(name, size) {
+    const path = ICON_PATHS[name] || ICON_PATHS.chart;
+    const s = size || 20;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 24 24" ` +
+        `fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+}
+
+// Define a modern Plotly template with enhanced styling.
+// Colors are derived from the active CSS theme (see theme.js) so charts
+// match light/dark mode. Rebuilt on theme change via rebuildPlotlyTemplate().
+const PLOTLY_FONT_FAMILY = 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
+function buildPlotlyTemplate() {
+    const t = (window.BMWTheme && window.BMWTheme.plotlyLayout) ? window.BMWTheme.plotlyLayout() : {};
+    const surface = t.paper_bgcolor || '#ffffff';
+    const text = (t.title && t.title.font && t.title.font.color) || '#333';
+    const muted = (t.font && t.font.color) || '#555';
+    const grid = (t.xaxis && t.xaxis.gridcolor) || '#f0f0f0';
+    const border = (t.xaxis && t.xaxis.zerolinecolor) || '#e0e0e0';
+    return {
+        layout: {
+            paper_bgcolor: surface,
+            plot_bgcolor: surface,
             font: {
-                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-                size: 18,
-                color: '#333'
-            }
-        },
-        colorway: ['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6', '#1abc9c', '#34495e', '#7f8c8d', '#d35400', '#c0392b'],
-        legend: {
-            bgcolor: '#ffffff',
-            bordercolor: '#f0f0f0',
-            borderwidth: 1,
-            font: {
-                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-                size: 12,
-                color: '#555'
-            }
-        },
-        xaxis: {
-            gridcolor: '#f0f0f0',
-            zerolinecolor: '#e0e0e0',
-            tickfont: {
-                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-                size: 12,
-                color: '#555'
-            }
-        },
-        yaxis: {
-            gridcolor: '#f0f0f0',
-            zerolinecolor: '#e0e0e0',
-            tickfont: {
-                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-                size: 12,
-                color: '#555'
+                family: PLOTLY_FONT_FAMILY,
+                color: muted,
+                size: 12
+            },
+            title: {
+                font: {
+                    family: PLOTLY_FONT_FAMILY,
+                    size: 18,
+                    color: text
+                }
+            },
+            colorway: ['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6', '#1abc9c', '#34495e', '#7f8c8d', '#d35400', '#c0392b'],
+            legend: {
+                bgcolor: surface,
+                bordercolor: border,
+                borderwidth: 1,
+                font: {
+                    family: PLOTLY_FONT_FAMILY,
+                    size: 12,
+                    color: muted
+                }
+            },
+            xaxis: {
+                gridcolor: grid,
+                zerolinecolor: border,
+                tickfont: {
+                    family: PLOTLY_FONT_FAMILY,
+                    size: 12,
+                    color: muted
+                }
+            },
+            yaxis: {
+                gridcolor: grid,
+                zerolinecolor: border,
+                tickfont: {
+                    family: PLOTLY_FONT_FAMILY,
+                    size: 12,
+                    color: muted
+                }
             }
         }
-    }
-};
+    };
+}
+
+let plotlyTemplate = buildPlotlyTemplate();
+
+// Resolve a CSS theme token to its current value, for use inside Plotly
+// layout/trace objects (Plotly cannot read CSS variables directly).
+function themeColor(name, fallback) {
+    return (window.BMWTheme && window.BMWTheme.cssVar) ? window.BMWTheme.cssVar(name, fallback) : fallback;
+}
 
 // DOM elements
 const disclaimerEl = document.getElementById('disclaimer');
@@ -87,6 +131,17 @@ function setupEventListeners() {
     applyDateFilterBtn.addEventListener('click', applyDateFilter);
     toggleUnitsBtn.addEventListener('click', toggleUnits);
     sessionDropdownEl.addEventListener('change', handleSessionSelection);
+
+    // Re-render Plotly charts when the color theme changes
+    window.addEventListener('bmwthemechange', () => {
+        plotlyTemplate = buildPlotlyTemplate();
+        if (window.__lastStats) {
+            updateDashboardVisualizations(window.__lastStats);
+        }
+        if (currentSession) {
+            updateSessionDetails();
+        }
+    });
     
     // Set up consent checkbox to show/hide model selector
     const consentCheckbox = document.getElementById('fleet-stats-consent');
@@ -302,6 +357,9 @@ async function loadSessionData() {
         
         const stats = await statsResponse.json();
 
+        // Cache the latest stats so charts can be re-rendered on theme change
+        window.__lastStats = stats;
+
         // Update UI with fetched data
         updateSessionDropdown();
         updateDashboardVisualizations(stats);
@@ -345,6 +403,11 @@ function updateSessionDropdown() {
 
 // Update dashboard visualizations
 function updateDashboardVisualizations(stats) {
+    // Rebuild the Plotly theme template now that the (async) stylesheet is
+    // applied, so the very first render already matches the active light/dark
+    // theme instead of the light fallback captured at module load.
+    plotlyTemplate = buildPlotlyTemplate();
+
     // Create gauges
     createTotalEnergyGauge();
     updateCurrentKmGauge();
@@ -441,11 +504,16 @@ function createTotalEnergyGauge() {
     const layout = {
         title: {
             text: 'Total Energy Consumption',
-            font: { size: 20, color: '#444', family: 'Roboto, sans-serif' }
+            font: { size: 17, color: themeColor('--heading', '#2c3e50'), family: 'Roboto, sans-serif' },
+            x: 0,
+            xanchor: 'left',
+            xref: 'paper',
+            y: 0.97,
+            yanchor: 'top'
         },
         barmode: 'stack',
-        height: 280,
-        margin: { t: 60, b: 40, l: 70, r: 40 },
+        height: 300,
+        margin: { t: 50, b: 70, l: 70, r: 40 },
         template: plotlyTemplate,
         yaxis: {
             title: {
@@ -458,8 +526,8 @@ function createTotalEnergyGauge() {
         },
         legend: {
             orientation: 'h',
-            yanchor: 'bottom',
-            y: 1.02,
+            yanchor: 'top',
+            y: -0.12,
             xanchor: 'center',
             x: 0.5
         },
@@ -472,16 +540,16 @@ function createTotalEnergyGauge() {
                 arrowhead: 0,
                 arrowsize: 1,
                 arrowwidth: 1,
-                arrowcolor: '#666',
+                arrowcolor: themeColor('--muted', '#666'),
                 ax: 0,
                 ay: -40,
                 font: {
                     size: 14,
-                    color: '#444',
+                    color: themeColor('--text', '#2c3e50'),
                     weight: 'bold'
                 },
-                bgcolor: 'rgba(255, 255, 255, 0.8)',
-                bordercolor: '#ddd',
+                bgcolor: themeColor('--card-bg', '#ffffff'),
+                bordercolor: themeColor('--border', '#ddd'),
                 borderwidth: 1,
                 borderpad: 4,
                 opacity: 0.9
@@ -490,7 +558,7 @@ function createTotalEnergyGauge() {
     };
     
     // Create the stacked bar chart
-    Plotly.newPlot('total-energy-gauge', data, layout, {responsive: true});
+    Plotly.newPlot('total-energy-gauge', data, layout, {responsive: true, displayModeBar: false});
     
     // Add additional information card below the chart
     const gaugeContainer = document.getElementById('total-energy-gauge');
@@ -508,7 +576,7 @@ function createTotalEnergyGauge() {
     infoCard.style.justifyContent = 'space-around';
     infoCard.style.marginTop = '10px';
     infoCard.style.padding = '10px';
-    infoCard.style.backgroundColor = '#f8f9fa';
+    infoCard.style.backgroundColor = 'var(--surface-2)';
     infoCard.style.borderRadius = '8px';
     infoCard.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
     
@@ -519,20 +587,22 @@ function createTotalEnergyGauge() {
         stat.style.padding = '10px';
         
         const iconEl = document.createElement('div');
-        iconEl.textContent = icon;
-        iconEl.style.fontSize = '24px';
-        iconEl.style.marginBottom = '5px';
+        iconEl.innerHTML = svgIcon(icon, 20);
+        iconEl.style.color = 'var(--accent)';
+        iconEl.style.marginBottom = '6px';
+        iconEl.style.display = 'flex';
+        iconEl.style.justifyContent = 'center';
         
         const valueEl = document.createElement('div');
         valueEl.textContent = value;
         valueEl.style.fontSize = '18px';
-        valueEl.style.fontWeight = 'bold';
-        valueEl.style.color = color;
+        valueEl.style.fontWeight = '600';
+        valueEl.style.color = 'var(--heading)';
         
         const labelEl = document.createElement('div');
         labelEl.textContent = label;
         labelEl.style.fontSize = '12px';
-        labelEl.style.color = '#777';
+        labelEl.style.color = 'var(--muted)';
         
         stat.appendChild(iconEl);
         stat.appendChild(valueEl);
@@ -552,10 +622,10 @@ function createTotalEnergyGauge() {
         ((totalEnergyAc / totalEnergy) * 100).toFixed(0) + '%' : '0%';
     
     // Add the stats to the card
-    infoCard.appendChild(createEnergyStat('Total Energy', totalEnergy.toFixed(1) + ' kWh', '#9c27b0', '⚡'));
-    infoCard.appendChild(createEnergyStat('Avg per Session', avgEnergyPerSession, '#2196f3', '📊'));
-    infoCard.appendChild(createEnergyStat('DC Charging', dcPercentage, '#3498db', '🔋'));
-    infoCard.appendChild(createEnergyStat('AC Charging', acPercentage, '#2ecc71', '🔌'));
+    infoCard.appendChild(createEnergyStat('Total Energy', totalEnergy.toFixed(1) + ' kWh', '#9c27b0', 'bolt'));
+    infoCard.appendChild(createEnergyStat('Avg per Session', avgEnergyPerSession, '#2196f3', 'chart'));
+    infoCard.appendChild(createEnergyStat('DC Charging', dcPercentage, '#3498db', 'battery'));
+    infoCard.appendChild(createEnergyStat('AC Charging', acPercentage, '#2ecc71', 'plug'));
     
     // Add the info card to the container
     gaugeContainer.appendChild(infoCard);
@@ -623,21 +693,17 @@ function updateCurrentKmGauge() {
     card.style.justifyContent = 'center';
     card.style.alignItems = 'center';
     card.style.padding = '20px';
-    card.style.backgroundColor = '#ffffff';
-    card.style.borderRadius = '10px';
-    card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+    card.style.backgroundColor = 'var(--card-bg)';
+    card.style.borderRadius = 'var(--radius)';
+    card.style.border = '1px solid var(--border)';
+    card.style.boxShadow = 'var(--shadow-sm)';
     card.style.position = 'relative';
     card.style.overflow = 'hidden';
-    card.style.transition = 'transform 0.3s ease';
-    
-    // Add hover effect
-    card.onmouseover = () => card.style.transform = 'translateY(-5px)';
-    card.onmouseout = () => card.style.transform = 'translateY(0)';
     
     // Create the header section
     const header = document.createElement('div');
     header.style.width = '100%';
-    header.style.borderBottom = '1px solid #f0f0f0';
+    header.style.borderBottom = '1px solid var(--border)';
     header.style.paddingBottom = '15px';
     header.style.marginBottom = '15px';
     header.style.textAlign = 'center';
@@ -645,7 +711,7 @@ function updateCurrentKmGauge() {
     const title = document.createElement('h3');
     title.textContent = 'Distance Covered';
     title.style.margin = '0';
-    title.style.color = '#444';
+    title.style.color = 'var(--text)';
     title.style.fontSize = '18px';
     header.appendChild(title);
     
@@ -657,18 +723,16 @@ function updateCurrentKmGauge() {
     distanceContainer.style.margin = '20px 0';
     
     const distanceValue = document.createElement('div');
-    distanceValue.style.fontSize = '56px';
+    distanceValue.style.fontSize = '52px';
     distanceValue.style.fontWeight = '700';
-    distanceValue.style.color = '#1f77b4';
+    distanceValue.style.color = 'var(--heading)';
     distanceValue.style.lineHeight = '1';
-    distanceValue.style.background = 'linear-gradient(45deg, #1f77b4, #2ca8ff)';
-    distanceValue.style.WebkitBackgroundClip = 'text';
-    distanceValue.style.WebkitTextFillColor = 'transparent';
+    distanceValue.style.letterSpacing = '-0.02em';
     distanceValue.textContent = Math.round(displayDistance).toLocaleString();
     
     const distanceUnit = document.createElement('div');
     distanceUnit.style.fontSize = '18px';
-    distanceUnit.style.color = '#777';
+    distanceUnit.style.color = 'var(--muted)';
     distanceUnit.style.marginTop = '5px';
     distanceUnit.textContent = unitLabel;
     
@@ -689,25 +753,27 @@ function updateCurrentKmGauge() {
         stat.style.display = 'flex';
         stat.style.flexDirection = 'column';
         stat.style.alignItems = 'center';
-        stat.style.backgroundColor = '#f8f9fa';
+        stat.style.backgroundColor = 'var(--surface-2)';
         stat.style.padding = '12px';
         stat.style.borderRadius = '8px';
         
         const iconElement = document.createElement('div');
-        iconElement.textContent = icon;
-        iconElement.style.fontSize = '20px';
-        iconElement.style.marginBottom = '5px';
+        iconElement.innerHTML = svgIcon(icon, 18);
+        iconElement.style.color = 'var(--accent)';
+        iconElement.style.marginBottom = '6px';
+        iconElement.style.display = 'flex';
+        iconElement.style.justifyContent = 'center';
         
         const valueElement = document.createElement('div');
         valueElement.textContent = value;
         valueElement.style.fontSize = '18px';
         valueElement.style.fontWeight = '600';
-        valueElement.style.color = '#444';
+        valueElement.style.color = 'var(--text)';
         
         const labelElement = document.createElement('div');
         labelElement.textContent = label;
         labelElement.style.fontSize = '12px';
-        labelElement.style.color = '#777';
+        labelElement.style.color = 'var(--muted)';
         
         stat.appendChild(iconElement);
         stat.appendChild(valueElement);
@@ -717,14 +783,14 @@ function updateCurrentKmGauge() {
     }
     
     // Add stat items
-    statsContainer.appendChild(createStatItem('Time Period', dayDiff + ' days', '📅'));
-    statsContainer.appendChild(createStatItem('Sessions', numSessions, '🔌'));
+    statsContainer.appendChild(createStatItem('Time Period', dayDiff + ' days', 'calendar'));
+    statsContainer.appendChild(createStatItem('Sessions', numSessions, 'plug'));
     
     // Add date range info
     const dateRange = document.createElement('div');
     dateRange.style.marginTop = '20px';
     dateRange.style.fontSize = '13px';
-    dateRange.style.color = '#666';
+    dateRange.style.color = 'var(--muted)';
     dateRange.style.textAlign = 'center';
     dateRange.style.width = '100%';
     dateRange.textContent = `${firstDate.toLocaleDateString()} - ${lastDate.toLocaleDateString()}`;
@@ -773,22 +839,18 @@ function createOverallEfficiencyGauge(efficiency) {
     card.style.flexDirection = 'column';
     card.style.justifyContent = 'center';
     card.style.alignItems = 'center';
-    card.style.backgroundColor = '#ffffff';
-    card.style.borderRadius = '10px';
-    card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+    card.style.backgroundColor = 'var(--card-bg)';
+    card.style.borderRadius = 'var(--radius)';
+    card.style.border = '1px solid var(--border)';
+    card.style.boxShadow = 'var(--shadow-sm)';
     card.style.position = 'relative';
     card.style.padding = '20px';
-    card.style.transition = 'transform 0.3s ease';
-    
-    // Add hover effect
-    card.onmouseover = () => card.style.transform = 'translateY(-5px)';
-    card.onmouseout = () => card.style.transform = 'translateY(0)';
     
     // Create title
     const title = document.createElement('h3');
     title.textContent = 'Overall Charging Efficiency';
     title.style.margin = '0 0 20px 0';
-    title.style.color = '#444';
+    title.style.color = 'var(--text)';
     title.style.fontSize = '18px';
     title.style.textAlign = 'center';
     
@@ -823,7 +885,7 @@ function createOverallEfficiencyGauge(efficiency) {
     backgroundCircle.setAttribute('cy', '50');
     backgroundCircle.setAttribute('r', '45');
     backgroundCircle.setAttribute('fill', 'none');
-    backgroundCircle.setAttribute('stroke', '#f0f0f0');
+    backgroundCircle.setAttribute('stroke', themeColor('--track', '#f0f0f0'));
     backgroundCircle.setAttribute('stroke-width', '10');
     
     // Add gradient definition
@@ -887,7 +949,7 @@ function createOverallEfficiencyGauge(efficiency) {
     const label = document.createElement('div');
     label.textContent = 'Efficiency';
     label.style.fontSize = '14px';
-    label.style.color = '#777';
+    label.style.color = 'var(--muted)';
     
     valueContainer.appendChild(value);
     valueContainer.appendChild(label);
@@ -921,7 +983,7 @@ function createOverallEfficiencyGauge(efficiency) {
     const explanation = document.createElement('div');
     explanation.textContent = 'Energy transferred from grid to battery';
     explanation.style.fontSize = '13px';
-    explanation.style.color = '#777';
+    explanation.style.color = 'var(--muted)';
     
     ratingContainer.appendChild(rating);
     ratingContainer.appendChild(explanation);
@@ -979,7 +1041,7 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
             hovertemplate: '%{y:.1f} kWh/100km<extra></extra>', // Custom hover template
             textfont: {
                 size: 14,
-                color: '#333'
+                color: themeColor('--text', '#2c3e50')
             }
         }
     ];
@@ -987,10 +1049,15 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
     const layout = {
         title: {
             text: 'Power Consumption Comparison',
-            font: { size: 20, color: '#444', family: 'Roboto, sans-serif' }
+            font: { size: 17, color: themeColor('--text', '#2c3e50'), family: 'Roboto, sans-serif' },
+            x: 0,
+            xanchor: 'left',
+            xref: 'paper',
+            y: 0.97,
+            yanchor: 'top'
         },
         height: 300,
-        margin: { t: 60, b: 80, l: 70, r: 40 },
+        margin: { t: 50, b: 80, l: 70, r: 40 },
         template: plotlyTemplate,
         yaxis: {
             title: {
@@ -1010,7 +1077,7 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
                 text: consumption.toFixed(1) + ' kWh/100km', // Include units in the annotation
                 showarrow: false,
                 yshift: 15, // Move above the bar instead of inside it
-                font: { size: 14, color: '#333', weight: 'bold' }
+                font: { size: 14, color: themeColor('--text', '#2c3e50'), weight: 'bold' }
             },
             {
                 x: 1,
@@ -1018,7 +1085,7 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
                 text: consumptionWithoutLosses.toFixed(1) + ' kWh/100km', // Include units in the annotation
                 showarrow: false,
                 yshift: 15, // Move above the bar instead of inside it
-                font: { size: 14, color: '#333', weight: 'bold' }
+                font: { size: 14, color: themeColor('--text', '#2c3e50'), weight: 'bold' }
             }
         ]
     };
@@ -1027,7 +1094,7 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
     const savingsPercentage = ((consumption - consumptionWithoutLosses) / consumption * 100).toFixed(1);
     
     // Combine both gauges into a single visualization
-    Plotly.newPlot('power-consumption-gauge', data, layout);
+    Plotly.newPlot('power-consumption-gauge', data, layout, {responsive: true, displayModeBar: false});
     
     // Add custom HTML to the second gauge container to display savings
     const efficiencyContainer = document.getElementById('power-consumption-without-grid-losses-gauge');
@@ -1040,21 +1107,17 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
     savingsCard.style.flexDirection = 'column';
     savingsCard.style.justifyContent = 'center';
     savingsCard.style.alignItems = 'center';
-    savingsCard.style.backgroundColor = '#ffffff';
-    savingsCard.style.borderRadius = '10px';
-    savingsCard.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+    savingsCard.style.backgroundColor = 'var(--card-bg)';
+    savingsCard.style.borderRadius = 'var(--radius)';
+    savingsCard.style.border = '1px solid var(--border)';
+    savingsCard.style.boxShadow = 'var(--shadow-sm)';
     savingsCard.style.padding = '20px';
-    savingsCard.style.transition = 'transform 0.3s ease';
-    
-    // Add hover effect
-    savingsCard.onmouseover = () => savingsCard.style.transform = 'translateY(-5px)';
-    savingsCard.onmouseout = () => savingsCard.style.transform = 'translateY(0)';
     
     // Create header
     const header = document.createElement('h3');
     header.textContent = 'Charging Energy Overhead';
     header.style.margin = '0 0 20px 0';
-    header.style.color = '#444';
+    header.style.color = 'var(--text)';
     header.style.fontSize = '18px';
     header.style.textAlign = 'center';
     
@@ -1064,18 +1127,17 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
     savingsValueContainer.style.marginBottom = '10px';
     
     const savingsValue = document.createElement('div');
-    savingsValue.style.fontSize = '64px';
-    savingsValue.style.fontWeight = 'bold';
-    savingsValue.style.background = 'linear-gradient(45deg, #4A90E2, #6BD098)';
-    savingsValue.style.WebkitBackgroundClip = 'text';
-    savingsValue.style.WebkitTextFillColor = 'transparent';
+    savingsValue.style.fontSize = '60px';
+    savingsValue.style.fontWeight = '700';
+    savingsValue.style.color = 'var(--heading)';
+    savingsValue.style.letterSpacing = '-0.02em';
     savingsValue.style.lineHeight = '1';
     savingsValue.textContent = savingsPercentage + '%';
     
     const savingsLabel = document.createElement('div');
     savingsLabel.textContent = 'Energy overhead from grid losses';
     savingsLabel.style.fontSize = '14px';
-    savingsLabel.style.color = '#777';
+    savingsLabel.style.color = 'var(--muted)';
     savingsLabel.style.marginTop = '10px';
     
     savingsValueContainer.appendChild(savingsValue);
@@ -1101,12 +1163,12 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
     
     rows.forEach(row => {
         const tr = document.createElement('tr');
-        tr.style.borderBottom = '1px solid #f0f0f0';
+        tr.style.borderBottom = '1px solid var(--border)';
         
         const tdLabel = document.createElement('td');
         tdLabel.textContent = row.label;
         tdLabel.style.padding = '10px 0';
-        tdLabel.style.color = '#555';
+        tdLabel.style.color = 'var(--muted)';
         
         const tdValue = document.createElement('td');
         tdValue.textContent = row.value;
@@ -1126,7 +1188,7 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
     const note = document.createElement('div');
     note.textContent = 'Note: Grid losses include AC/DC conversion inefficiency, heat generation, and energy used for preconditioning while charging';
     note.style.fontSize = '12px';
-    note.style.color = '#999';
+    note.style.color = 'var(--muted)';
     note.style.marginTop = '20px';
     note.style.textAlign = 'center';
     
@@ -1154,15 +1216,16 @@ function renderFailureReasons(reasons, affectedSessions, totalFailed) {
     box.className = 'failure-reasons-breakdown';
     box.style.marginBottom = '30px';
     box.style.padding = '20px 24px';
-    box.style.backgroundColor = '#ffffff';
-    box.style.borderRadius = '15px';
-    box.style.boxShadow = '0 10px 20px rgba(0,0,0,0.05)';
+    box.style.backgroundColor = 'var(--card-bg)';
+    box.style.borderRadius = 'var(--radius)';
+    box.style.border = '1px solid var(--border)';
+    box.style.boxShadow = 'var(--shadow-sm)';
 
     const title = document.createElement('div');
     title.textContent = 'Most common charging errors';
     title.style.fontSize = '18px';
     title.style.fontWeight = '600';
-    title.style.color = '#444';
+    title.style.color = 'var(--text)';
     title.style.marginBottom = '4px';
     box.appendChild(title);
 
@@ -1174,7 +1237,7 @@ function renderFailureReasons(reasons, affectedSessions, totalFailed) {
             ? `${affectedSessions} of ${totalFailed} failed sessions reported a reason — the other ${noReason} aborted without one`
             : `All ${totalFailed} failed sessions reported a reason`;
         subtitle.style.fontSize = '13px';
-        subtitle.style.color = '#888';
+        subtitle.style.color = 'var(--muted)';
         subtitle.style.marginBottom = '14px';
         box.appendChild(subtitle);
     }
@@ -1193,7 +1256,7 @@ function renderFailureReasons(reasons, affectedSessions, totalFailed) {
         head.style.display = 'flex';
         head.style.justifyContent = 'space-between';
         head.style.fontSize = '14px';
-        head.style.color = '#555';
+        head.style.color = 'var(--muted)';
         head.style.marginBottom = '4px';
         const label = document.createElement('span');
         label.textContent = labelText;
@@ -1206,7 +1269,7 @@ function renderFailureReasons(reasons, affectedSessions, totalFailed) {
 
         const track = document.createElement('div');
         track.style.height = '8px';
-        track.style.backgroundColor = '#f0f0f0';
+        track.style.backgroundColor = 'var(--track)';
         track.style.borderRadius = '4px';
         track.style.overflow = 'hidden';
         const bar = document.createElement('div');
@@ -1259,7 +1322,7 @@ function createSessionStatsGauges(sessionStats) {
     const layout = {
         title: {
             text: 'Charging Sessions Overview',
-            font: { size: 18, color: '#444' }
+            font: { size: 18, color: themeColor('--text', '#2c3e50') }
         },
         height: 300,
         showlegend: true,
@@ -1272,7 +1335,7 @@ function createSessionStatsGauges(sessionStats) {
         annotations: [{
             font: {
                 size: 20,
-                color: '#444'
+                color: themeColor('--text', '#2c3e50')
             },
             showarrow: false,
             text: totalSessions,
@@ -1282,7 +1345,7 @@ function createSessionStatsGauges(sessionStats) {
         {
             font: {
                 size: 14,
-                color: '#777'
+                color: themeColor('--muted', '#777')
             },
             showarrow: false,
             text: 'TOTAL',
@@ -1295,8 +1358,8 @@ function createSessionStatsGauges(sessionStats) {
     Plotly.newPlot('total-sessions-gauge', data, layout);
     
     // Create modern cards for failed and successful sessions
-    createSessionStatCard('failed-sessions-gauge', failedSessions, totalSessions, 'Failed Sessions', '#EF5350', '❌');
-    createSessionStatCard('successful-sessions-gauge', successfulSessions, totalSessions, 'Successful Sessions', '#66BB6A', '✅');
+    createSessionStatCard('failed-sessions-gauge', failedSessions, totalSessions, 'Failed Sessions', '#EF5350', 'cross');
+    createSessionStatCard('successful-sessions-gauge', successfulSessions, totalSessions, 'Successful Sessions', '#66BB6A', 'check');
 
     // Show the most common charging errors (from BMW businessErrors) when present.
     renderFailureReasons(sessionStats.error_breakdown || [], sessionStats.sessions_with_errors || 0, sessionStats.total_failed_sessions || 0);
@@ -1309,32 +1372,30 @@ function createSessionStatsGauges(sessionStats) {
         // Create the card
         const card = document.createElement('div');
         card.style.height = '100%';
-        card.style.backgroundColor = '#ffffff';
-        card.style.borderRadius = '10px';
-        card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        card.style.backgroundColor = 'var(--card-bg)';
+        card.style.borderRadius = 'var(--radius)';
+        card.style.border = '1px solid var(--border)';
+        card.style.boxShadow = 'var(--shadow-sm)';
         card.style.padding = '20px';
         card.style.display = 'flex';
         card.style.flexDirection = 'column';
         card.style.alignItems = 'center';
         card.style.justifyContent = 'center';
-        card.style.transition = 'transform 0.3s ease';
-        
-        // Add hover effect
-        card.onmouseover = () => card.style.transform = 'translateY(-5px)';
-        card.onmouseout = () => card.style.transform = 'translateY(0)';
         
         // Create an icon for the card
         const iconElement = document.createElement('div');
-        iconElement.textContent = icon;
-        iconElement.style.fontSize = '36px';
-        iconElement.style.marginBottom = '10px';
+        iconElement.innerHTML = svgIcon(icon, 26);
+        iconElement.style.color = color;
+        iconElement.style.marginBottom = '12px';
+        iconElement.style.display = 'flex';
+        iconElement.style.justifyContent = 'center';
         
         // Create title
         const titleElement = document.createElement('h3');
         titleElement.textContent = title;
         titleElement.style.margin = '0 0 15px 0';
         titleElement.style.fontSize = '18px';
-        titleElement.style.color = '#444';
+        titleElement.style.color = 'var(--text)';
         titleElement.style.textAlign = 'center';
         
         // Create value container
@@ -1357,7 +1418,7 @@ function createSessionStatsGauges(sessionStats) {
         percentageElement.textContent = `${percentage}% of total`;
         percentageElement.style.marginTop = '5px';
         percentageElement.style.fontSize = '14px';
-        percentageElement.style.color = '#777';
+        percentageElement.style.color = 'var(--muted)';
         
         valueContainer.appendChild(valueElement);
         valueContainer.appendChild(percentageElement);
@@ -1371,7 +1432,7 @@ function createSessionStatsGauges(sessionStats) {
         const progressBackground = document.createElement('div');
         progressBackground.style.width = '100%';
         progressBackground.style.height = '6px';
-        progressBackground.style.backgroundColor = '#f0f0f0';
+        progressBackground.style.backgroundColor = 'var(--track)';
         progressBackground.style.borderRadius = '3px';
         progressBackground.style.overflow = 'hidden';
         
@@ -1396,7 +1457,7 @@ function createSessionStatsGauges(sessionStats) {
         const contextElement = document.createElement('div');
         contextElement.style.marginTop = '20px';
         contextElement.style.fontSize = '13px';
-        contextElement.style.color = '#777';
+        contextElement.style.color = 'var(--muted)';
         contextElement.style.textAlign = 'center';
         
         if (title.includes('Failed')) {
@@ -1427,7 +1488,7 @@ async function updateProviderLists(sessionStats) {
             titleEl.textContent = title;
             titleEl.style.margin = '10px 0';
             titleEl.style.fontSize = '16px';
-            titleEl.style.color = '#333';
+            titleEl.style.color = 'var(--heading)';
             titleEl.style.fontWeight = '600';
             element.appendChild(titleEl);
         }
@@ -1458,7 +1519,7 @@ async function updateProviderLists(sessionStats) {
         const failedTitle = document.createElement('h3');
         failedTitle.textContent = 'Top 5 Failed Providers';
         failedTitle.style.margin = '10px 0';
-        failedTitle.style.color = '#333';
+        failedTitle.style.color = 'var(--heading)';
         failedTitle.style.fontWeight = '600';
         failedTitle.style.fontSize = '18px';
         failedTitle.style.textAlign = 'center';
@@ -1467,7 +1528,7 @@ async function updateProviderLists(sessionStats) {
         const successTitle = document.createElement('h3');
         successTitle.textContent = 'Top 5 Successful Providers';
         successTitle.style.margin = '10px 0';
-        successTitle.style.color = '#333';
+        successTitle.style.color = 'var(--heading)';
         successTitle.style.fontWeight = '600';
         successTitle.style.fontSize = '18px';
         successTitle.style.textAlign = 'center';
@@ -1479,7 +1540,7 @@ async function updateProviderLists(sessionStats) {
         thresholdNote.textContent = 'Note: Only providers with 50+ sessions are displayed in these charts';
         thresholdNote.style.fontSize = '12px';
         thresholdNote.style.fontStyle = 'italic';
-        thresholdNote.style.color = '#666';
+        thresholdNote.style.color = 'var(--muted)';
         thresholdNote.style.textAlign = 'center';
         thresholdNote.style.margin = '0 0 10px 0';
         
@@ -1535,7 +1596,7 @@ async function updateProviderLists(sessionStats) {
             const li = document.createElement('div');
             li.style.padding = '10px';
             li.style.margin = '8px 0';
-            li.style.backgroundColor = '#f5f5f5';
+            li.style.backgroundColor = 'var(--surface-2)';
             li.style.borderRadius = '8px';
             li.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
             
@@ -1550,7 +1611,7 @@ async function updateProviderLists(sessionStats) {
             const providerName = document.createElement('span');
             providerName.textContent = name;
             providerName.style.fontWeight = 'bold';
-            providerName.style.color = '#333';
+            providerName.style.color = 'var(--text)';
             providerName.style.fontSize = '14px';
             providerName.style.flexGrow = '1';
             
@@ -1581,7 +1642,7 @@ async function updateProviderLists(sessionStats) {
             percentageInfo.style.justifyContent = 'space-between';
             percentageInfo.style.marginBottom = '2px';
             percentageInfo.style.fontSize = '11px';
-            percentageInfo.style.color = '#666';
+            percentageInfo.style.color = 'var(--muted)';
             
             const totalSessionsText = document.createElement('span');
             totalSessionsText.textContent = `${total} total sessions`;
@@ -1599,7 +1660,7 @@ async function updateProviderLists(sessionStats) {
             // Bar background
             const percentageBar = document.createElement('div');
             percentageBar.style.height = '6px';
-            percentageBar.style.backgroundColor = '#e0e0e0';
+            percentageBar.style.backgroundColor = 'var(--track)';
             percentageBar.style.borderRadius = '3px';
             percentageBar.style.overflow = 'hidden';
             percentageBar.style.position = 'relative';
@@ -1696,7 +1757,7 @@ async function updateProviderLists(sessionStats) {
             noFailures.textContent = 'No failed sessions data available';
             noFailures.style.padding = '10px';
             noFailures.style.textAlign = 'center';
-            noFailures.style.color = '#666';
+            noFailures.style.color = 'var(--muted)';
             topFailedProvidersEl.appendChild(noFailures);
         }
         
@@ -1712,7 +1773,7 @@ async function updateProviderLists(sessionStats) {
             noSuccess.textContent = 'No successful sessions data available';
             noSuccess.style.padding = '10px';
             noSuccess.style.textAlign = 'center';
-            noSuccess.style.color = '#666';
+            noSuccess.style.color = 'var(--muted)';
             topSuccessfulProvidersEl.appendChild(noSuccess);
         }
     }
@@ -1739,7 +1800,7 @@ async function updateProviderLists(sessionStats) {
         section.style.marginTop = '30px';
         section.style.marginBottom = '30px';
         section.style.padding = '15px';
-        section.style.backgroundColor = '#f9f9f9';
+        section.style.backgroundColor = 'var(--surface-2)';
         section.style.borderRadius = '8px';
         section.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
         
@@ -1846,7 +1907,7 @@ async function updateProviderLists(sessionStats) {
 function createSOCProgressBar(label, percentage, color) {
     const container = document.createElement('div');
     container.style.marginBottom = '8px';
-    container.style.backgroundColor = '#ffffff';
+    container.style.backgroundColor = 'var(--card-bg)';
     container.style.borderRadius = '6px';
     container.style.padding = '10px';
     container.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
@@ -1860,7 +1921,7 @@ function createSOCProgressBar(label, percentage, color) {
     const labelEl = document.createElement('span');
     labelEl.textContent = label;
     labelEl.style.fontWeight = 'bold';
-    labelEl.style.color = '#555555';
+    labelEl.style.color = 'var(--muted)';
     labelEl.style.fontSize = '13px';
     
     // Handle undefined or null percentages safely
@@ -1878,7 +1939,7 @@ function createSOCProgressBar(label, percentage, color) {
     // Create progress bar background
     const progressBarBg = document.createElement('div');
     progressBarBg.style.height = '10px';
-    progressBarBg.style.backgroundColor = '#f0f0f0';
+    progressBarBg.style.backgroundColor = 'var(--track)';
     progressBarBg.style.borderRadius = '5px';
     progressBarBg.style.overflow = 'hidden';
     
@@ -1917,7 +1978,7 @@ function updateSOCStats(socStats) {
     const statsTitle = document.createElement('h3');
     statsTitle.textContent = 'SOC Statistics';
     statsTitle.style.margin = '0 0 10px 0';
-    statsTitle.style.color = '#333';
+    statsTitle.style.color = 'var(--heading)';
     statsSection.appendChild(statsTitle);
     
     // Create a card container for count stats - make it more compact
@@ -1928,29 +1989,24 @@ function updateSOCStats(socStats) {
     
     // Define stats with label, value, and icon
     const stats = [
-        { label: 'Total Sessions', value: socStats.total_sessions, icon: '📊', color: '#3498db' },
-        { label: 'Failed Sessions', value: socStats.failed_sessions, icon: '❌', color: '#e74c3c' },
-        { label: 'End SoC > 80%', value: socStats.above_80_count, icon: '🔋', color: '#27ae60' },
-        { label: 'End SoC = 80%', value: socStats.exactly_80_count, icon: '⚖️', color: '#f39c12' },
-        { label: 'End SoC < 80%', value: socStats.below_80_count, icon: '⚠️', color: '#e67e22' },
-        { label: 'End SoC = 100%', value: socStats.exactly_100_count, icon: '✅', color: '#2ecc71' }
+        { label: 'Total Sessions', value: socStats.total_sessions, icon: 'chart', color: '#3498db' },
+        { label: 'Failed Sessions', value: socStats.failed_sessions, icon: 'cross', color: '#e74c3c' },
+        { label: 'End SoC > 80%', value: socStats.above_80_count, icon: 'battery', color: '#27ae60' },
+        { label: 'End SoC = 80%', value: socStats.exactly_80_count, icon: 'scale', color: '#f39c12' },
+        { label: 'End SoC < 80%', value: socStats.below_80_count, icon: 'alert', color: '#e67e22' },
+        { label: 'End SoC = 100%', value: socStats.exactly_100_count, icon: 'check', color: '#2ecc71' }
     ];
     
     // Create more compact styled cards for each stat
     stats.forEach(stat => {
         const card = document.createElement('div');
-        card.style.backgroundColor = '#ffffff';
-        card.style.borderRadius = '6px';
-        card.style.padding = '10px';
-        card.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+        card.style.backgroundColor = 'var(--card-bg)';
+        card.style.borderRadius = 'var(--radius-sm)';
+        card.style.padding = '12px';
+        card.style.boxShadow = 'var(--shadow-sm)';
         card.style.display = 'flex';
         card.style.flexDirection = 'column';
-        card.style.transition = 'transform 0.2s';
-        card.style.border = `1px solid ${stat.color}20`;
-        
-        // Add hover effect
-        card.onmouseover = () => card.style.transform = 'translateY(-2px)';
-        card.onmouseout = () => card.style.transform = 'translateY(0)';
+        card.style.border = '1px solid var(--border)';
         
         // Create header with icon and label
         const header = document.createElement('div');
@@ -1959,14 +2015,16 @@ function updateSOCStats(socStats) {
         header.style.marginBottom = '5px';
         
         const icon = document.createElement('span');
-        icon.textContent = stat.icon;
-        icon.style.marginRight = '5px';
-        icon.style.fontSize = '16px';
+        icon.innerHTML = svgIcon(stat.icon, 16);
+        icon.style.color = stat.color;
+        icon.style.marginRight = '8px';
+        icon.style.display = 'inline-flex';
+        icon.style.alignItems = 'center';
         
         const label = document.createElement('span');
         label.textContent = stat.label;
-        label.style.fontWeight = 'bold';
-        label.style.color = '#555555';
+        label.style.fontWeight = '600';
+        label.style.color = 'var(--muted)';
         label.style.fontSize = '12px';
         
         header.appendChild(icon);
@@ -1998,7 +2056,7 @@ function updateSOCStats(socStats) {
     const summaryTitle = document.createElement('h3');
     summaryTitle.textContent = 'State of Charge Summary';
     summaryTitle.style.margin = '0 0 10px 0';
-    summaryTitle.style.color = '#333';
+    summaryTitle.style.color = 'var(--heading)';
     socAveragesSection.appendChild(summaryTitle);
     
     // Ensure percentage values exist in socStats or use default values
@@ -2421,9 +2479,9 @@ function createCombinedGauges() {
     cardContainer.style.gap = '20px';
     cardContainer.style.padding = '20px';
     cardContainer.style.height = '100%';
-    cardContainer.style.backgroundColor = '#ffffff';
-    cardContainer.style.borderRadius = '15px';
-    cardContainer.style.boxShadow = '0 5px 15px rgba(0, 0, 0, 0.05)';
+    cardContainer.style.backgroundColor = 'var(--card-bg)';
+    cardContainer.style.borderRadius = 'var(--radius)';
+    cardContainer.style.boxShadow = 'var(--shadow-sm)';
     
     // Find max values for comparison
     const maxPower = Math.max(...sessions.map(s => s.avg_power));
@@ -2437,7 +2495,7 @@ function createCombinedGauges() {
             label: "Average Grid Power",
             value: currentSession.avg_power.toFixed(1),
             unit: "kW",
-            icon: "⚡",
+            icon: "gauge",
             color: "#3498db",
             max: maxPower,
             percentOfMax: (currentSession.avg_power / maxPower) * 100
@@ -2446,7 +2504,7 @@ function createCombinedGauges() {
             label: "Cost",
             value: currentSession.cost.toFixed(2),
             unit: "€",
-            icon: "💶",
+            icon: "euro",
             color: "#2ecc71",
             max: maxCost,
             percentOfMax: (currentSession.cost / maxCost) * 100
@@ -2455,7 +2513,7 @@ function createCombinedGauges() {
             label: "Efficiency",
             value: (currentSession.efficiency * 100).toFixed(1),
             unit: "%",
-            icon: "🔋",
+            icon: "battery",
             color: "#f39c12",
             max: 100,
             percentOfMax: currentSession.efficiency * 100
@@ -2464,7 +2522,7 @@ function createCombinedGauges() {
             label: "Energy Added",
             value: currentSession.energy_added_hvb.toFixed(1),
             unit: "kWh",
-            icon: "⚡",
+            icon: "bolt",
             color: "#9b59b6",
             max: maxEnergy,
             percentOfMax: (currentSession.energy_added_hvb / maxEnergy) * 100
@@ -2473,7 +2531,7 @@ function createCombinedGauges() {
             label: "Session Time",
             value: Math.round(currentSession.session_time_minutes),
             unit: "min",
-            icon: "⏱️",
+            icon: "clock",
             color: "#e74c3c",
             max: maxTime,
             percentOfMax: (currentSession.session_time_minutes / maxTime) * 100
@@ -2497,37 +2555,26 @@ function createCombinedGauges() {
     function createMetricCard(metric) {
         const card = document.createElement('div');
         card.className = 'session-metric-card';
-        card.style.backgroundColor = '#ffffff';
-        card.style.borderRadius = '12px';
+        card.style.backgroundColor = 'var(--card-bg)';
+        card.style.borderRadius = 'var(--radius)';
+        card.style.border = '1px solid var(--border)';
         card.style.padding = '20px';
-        card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
         card.style.display = 'flex';
         card.style.flexDirection = 'column';
         card.style.alignItems = 'center';
         card.style.justifyContent = 'space-between';
-        card.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
         card.style.position = 'relative';
         card.style.overflow = 'hidden';
         
-        // Add hover effect
-        card.onmouseover = () => {
-            card.style.transform = 'translateY(-5px)';
-            card.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)';
-        };
-        card.onmouseout = () => {
-            card.style.transform = 'translateY(0)';
-            card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
-        };
-        
         // Create icon
         const icon = document.createElement('div');
-        icon.textContent = metric.icon;
-        icon.style.fontSize = '28px';
-        icon.style.marginBottom = '10px';
-        icon.style.backgroundColor = `${metric.color}15`; // Light background based on color
-        icon.style.width = '50px';
-        icon.style.height = '50px';
-        icon.style.borderRadius = '50%';
+        icon.innerHTML = svgIcon(metric.icon, 20);
+        icon.style.color = 'var(--accent)';
+        icon.style.marginBottom = '12px';
+        icon.style.backgroundColor = 'color-mix(in srgb, var(--accent) 12%, transparent)';
+        icon.style.width = '40px';
+        icon.style.height = '40px';
+        icon.style.borderRadius = 'var(--radius-sm)';
         icon.style.display = 'flex';
         icon.style.justifyContent = 'center';
         icon.style.alignItems = 'center';
@@ -2536,7 +2583,7 @@ function createCombinedGauges() {
         const label = document.createElement('div');
         label.textContent = metric.label;
         label.style.fontSize = '14px';
-        label.style.color = '#666';
+        label.style.color = 'var(--muted)';
         label.style.marginBottom = '15px';
         label.style.textAlign = 'center';
         
@@ -2550,14 +2597,15 @@ function createCombinedGauges() {
         const value = document.createElement('div');
         value.textContent = metric.value;
         value.style.fontSize = '32px';
-        value.style.fontWeight = 'bold';
-        value.style.color = metric.color;
+        value.style.fontWeight = '700';
+        value.style.color = 'var(--heading)';
+        value.style.letterSpacing = '-0.02em';
         
         // Create unit
         const unit = document.createElement('div');
         unit.textContent = metric.unit;
         unit.style.fontSize = '14px';
-        unit.style.color = '#999';
+        unit.style.color = 'var(--muted)';
         unit.style.marginLeft = '5px';
         
         valueContainer.appendChild(value);
@@ -2567,7 +2615,7 @@ function createCombinedGauges() {
         const progressContainer = document.createElement('div');
         progressContainer.style.width = '100%';
         progressContainer.style.height = '6px';
-        progressContainer.style.backgroundColor = '#f0f0f0';
+        progressContainer.style.backgroundColor = 'var(--track)';
         progressContainer.style.borderRadius = '3px';
         progressContainer.style.overflow = 'hidden';
         progressContainer.style.marginTop = '5px';
@@ -2576,7 +2624,7 @@ function createCombinedGauges() {
         const progress = document.createElement('div');
         progress.style.width = `${metric.percentOfMax}%`;
         progress.style.height = '100%';
-        progress.style.backgroundColor = metric.color;
+        progress.style.backgroundColor = 'var(--accent)';
         progress.style.borderRadius = '3px';
         progress.style.transition = 'width 1s ease';
         
@@ -2586,7 +2634,7 @@ function createCombinedGauges() {
         const comparison = document.createElement('div');
         comparison.textContent = `${metric.percentOfMax.toFixed(0)}% of max (${metric.max.toFixed(1)} ${metric.unit})`;
         comparison.style.fontSize = '10px';
-        comparison.style.color = '#999';
+        comparison.style.color = 'var(--muted)';
         comparison.style.marginTop = '5px';
         comparison.style.textAlign = 'right';
         
@@ -2604,23 +2652,13 @@ function createCombinedGauges() {
     function createAdditionalInfoCard() {
         const card = document.createElement('div');
         card.className = 'session-info-card';
-        card.style.backgroundColor = '#ffffff';
-        card.style.borderRadius = '12px';
+        card.style.backgroundColor = 'var(--card-bg)';
+        card.style.borderRadius = 'var(--radius)';
+        card.style.border = '1px solid var(--border)';
         card.style.padding = '20px';
-        card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        card.style.boxShadow = 'var(--shadow-sm)';
         card.style.display = 'flex';
         card.style.flexDirection = 'column';
-        card.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
-        
-        // Add hover effect
-        card.onmouseover = () => {
-            card.style.transform = 'translateY(-5px)';
-            card.style.boxShadow = '0 8px 20px rgba(0,0,0,0.12)';
-        };
-        card.onmouseout = () => {
-            card.style.transform = 'translateY(0)';
-            card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
-        };
         
         // Create header
         const header = document.createElement('div');
@@ -2629,15 +2667,17 @@ function createCombinedGauges() {
         header.style.marginBottom = '15px';
         
         const icon = document.createElement('span');
-        icon.textContent = '📊';
-        icon.style.fontSize = '24px';
+        icon.innerHTML = svgIcon('chart', 20);
+        icon.style.color = 'var(--accent)';
         icon.style.marginRight = '10px';
+        icon.style.display = 'inline-flex';
+        icon.style.alignItems = 'center';
         
         const title = document.createElement('h4');
         title.textContent = 'Session Details';
         title.style.margin = '0';
         title.style.fontSize = '16px';
-        title.style.color = '#444';
+        title.style.color = 'var(--text)';
         
         header.appendChild(icon);
         header.appendChild(title);
@@ -2688,7 +2728,7 @@ function createCombinedGauges() {
             const labelCell = document.createElement('td');
             labelCell.textContent = item.label;
             labelCell.style.padding = '5px 0';
-            labelCell.style.color = '#666';
+            labelCell.style.color = 'var(--muted)';
             labelCell.style.fontSize = '14px';
             
             const valueCell = document.createElement('td');
@@ -2696,7 +2736,7 @@ function createCombinedGauges() {
             valueCell.style.padding = '5px 0';
             valueCell.style.textAlign = 'right';
             valueCell.style.fontWeight = '500';
-            valueCell.style.color = '#333';
+            valueCell.style.color = 'var(--text)';
             valueCell.style.fontSize = '14px';
             
             row.appendChild(labelCell);
@@ -2748,12 +2788,12 @@ function createCombinedGauges() {
         const socLabel = document.createElement('div');
         socLabel.textContent = 'Charge Progress';
         socLabel.style.fontSize = '14px';
-        socLabel.style.color = '#666';
+        socLabel.style.color = 'var(--muted)';
         socLabel.style.marginBottom = '5px';
         
         const socBarContainer = document.createElement('div');
         socBarContainer.style.height = '20px';
-        socBarContainer.style.backgroundColor = '#f0f0f0';
+        socBarContainer.style.backgroundColor = 'var(--track)';
         socBarContainer.style.borderRadius = '10px';
         socBarContainer.style.position = 'relative';
         socBarContainer.style.overflow = 'hidden';
