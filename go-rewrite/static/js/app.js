@@ -1139,6 +1139,72 @@ function createPowerConsumptionGauge(consumption, consumptionWithoutLosses) {
     efficiencyContainer.appendChild(savingsCard);
 }
 
+// Render a breakdown of the most common charging errors (from BMW
+// businessErrors) in its own panel below the session gauges, if any exist.
+function renderFailureReasons(reasons, affectedSessions) {
+    const container = document.getElementById('charging-errors-breakdown');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!reasons || reasons.length === 0) return;
+
+    const box = document.createElement('div');
+    box.className = 'failure-reasons-breakdown';
+    box.style.marginBottom = '30px';
+    box.style.padding = '20px 24px';
+    box.style.backgroundColor = '#ffffff';
+    box.style.borderRadius = '15px';
+    box.style.boxShadow = '0 10px 20px rgba(0,0,0,0.05)';
+
+    const title = document.createElement('div');
+    title.textContent = affectedSessions
+        ? `Most common charging errors (${affectedSessions} affected sessions)`
+        : 'Most common charging errors';
+    title.style.fontSize = '18px';
+    title.style.fontWeight = '600';
+    title.style.color = '#444';
+    title.style.marginBottom = '14px';
+    box.appendChild(title);
+
+    const maxCount = reasons.reduce((m, r) => Math.max(m, r.count), 0) || 1;
+
+    reasons.forEach(r => {
+        const row = document.createElement('div');
+        row.style.marginBottom = '10px';
+
+        const head = document.createElement('div');
+        head.style.display = 'flex';
+        head.style.justifyContent = 'space-between';
+        head.style.fontSize = '14px';
+        head.style.color = '#555';
+        head.style.marginBottom = '4px';
+        const label = document.createElement('span');
+        label.textContent = r.reason;
+        const count = document.createElement('span');
+        count.textContent = r.count;
+        count.style.fontWeight = '600';
+        count.style.color = '#c0392b';
+        head.appendChild(label);
+        head.appendChild(count);
+
+        const track = document.createElement('div');
+        track.style.height = '8px';
+        track.style.backgroundColor = '#f0f0f0';
+        track.style.borderRadius = '4px';
+        track.style.overflow = 'hidden';
+        const bar = document.createElement('div');
+        bar.style.height = '100%';
+        bar.style.width = `${(r.count / maxCount) * 100}%`;
+        bar.style.backgroundColor = '#EF5350';
+        bar.style.transition = 'width 0.8s ease-in-out';
+        track.appendChild(bar);
+
+        row.appendChild(head);
+        row.appendChild(track);
+        box.appendChild(row);
+    });
+    container.appendChild(box);
+}
+
 // Create modern session stats visualization
 function createSessionStatsGauges(sessionStats) {
     const totalSessions = sessionStats.total_sessions;
@@ -1205,6 +1271,9 @@ function createSessionStatsGauges(sessionStats) {
     // Create modern cards for failed and successful sessions
     createSessionStatCard('failed-sessions-gauge', failedSessions, totalSessions, 'Failed Sessions', '#EF5350', '❌');
     createSessionStatCard('successful-sessions-gauge', successfulSessions, totalSessions, 'Successful Sessions', '#66BB6A', '✅');
+
+    // Show the most common charging errors (from BMW businessErrors) when present.
+    renderFailureReasons(sessionStats.error_breakdown || [], sessionStats.sessions_with_errors || 0);
     
     // Helper function to create a modern stat card
     function createSessionStatCard(elementId, value, total, title, color, icon) {
@@ -2290,22 +2359,60 @@ function getMarkerHexColor(colorName) {
 // Create charge details graph
 function createChargeDetailsGraph() {
     if (!currentSession) return;
-    
+
     const data = [{
         x: [new Date(currentSession.start_time), new Date(currentSession.end_time)],
         y: [currentSession.soc_start, currentSession.soc_end],
         mode: 'lines+markers',
         type: 'scatter',
-        marker: { size: 10, color: 'blue' }
+        name: 'SoC (%)',
+        marker: { size: 10, color: 'blue' },
+        line: { color: 'blue' }
     }];
-    
+
+    // Build a real power curve from the per-block data when available.
+    const blocks = (currentSession.charging_blocks || []).filter(b => b.start_time && b.power_kw > 0);
+    let hasPower = false;
+    if (blocks.length > 0) {
+        const px = [];
+        const py = [];
+        blocks.forEach(b => {
+            const start = new Date(b.start_time);
+            const end = (b.end_time && new Date(b.end_time) > start) ? new Date(b.end_time) : start;
+            // Draw each block as a horizontal segment so the curve shows the
+            // actual power profile (and any pauses) over time.
+            px.push(start, end);
+            py.push(b.power_kw, b.power_kw);
+        });
+        data.push({
+            x: px,
+            y: py,
+            mode: 'lines',
+            type: 'scatter',
+            name: 'Grid power (kW)',
+            yaxis: 'y2',
+            line: { color: '#e67e22', width: 2 }
+        });
+        hasPower = true;
+    }
+
     const layout = {
         title: 'Charge Details',
         xaxis: { title: 'Time' },
-        yaxis: { title: 'SOC (%)' },
-        template: plotlyTemplate
+        yaxis: { title: 'SOC (%)', rangemode: 'tozero' },
+        template: plotlyTemplate,
+        showlegend: hasPower
     };
-    
+    if (hasPower) {
+        layout.yaxis2 = {
+            title: 'Power (kW)',
+            overlaying: 'y',
+            side: 'right',
+            rangemode: 'tozero',
+            showgrid: false
+        };
+    }
+
     Plotly.newPlot('charge-details-graph', data, layout);
 }
 
@@ -2565,6 +2672,20 @@ function createCombinedGauges() {
             { label: "Location", value: currentSession.location || "Unknown" },
             { label: "SoC Change", value: `${currentSession.soc_start}% → ${currentSession.soc_end}%` }
         ];
+
+        // Active charging time (from totalChargingDurationSec when available).
+        if (currentSession.charging_duration_sec > 0) {
+            const mins = Math.round(currentSession.charging_duration_sec / 60);
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            infoItems.push({ label: "Active charging", value: h > 0 ? `${h}h ${m}m` : `${m} min` });
+        }
+
+        // Battery preconditioning flag.
+        infoItems.push({
+            label: "Preconditioning",
+            value: currentSession.is_preconditioned ? "Yes ✅" : "No"
+        });
         
         // Create a table for info items
         const table = document.createElement('table');
@@ -2594,8 +2715,37 @@ function createCombinedGauges() {
         });
         
         content.appendChild(table);
-        
-        // Add SOC progress bar
+
+        // Show any reported charging-fault hints for this session.
+        const hints = currentSession.error_hints || [];
+        if (hints.length > 0) {
+            const uniqueHints = [...new Set(hints)];
+            const errBox = document.createElement('div');
+            errBox.style.marginTop = '15px';
+            errBox.style.padding = '10px 12px';
+            errBox.style.backgroundColor = '#fff4f4';
+            errBox.style.border = '1px solid #f5c2c2';
+            errBox.style.borderRadius = '8px';
+
+            const errTitle = document.createElement('div');
+            errTitle.textContent = `⚠️ Charging issues reported (${hints.length})`;
+            errTitle.style.fontSize = '13px';
+            errTitle.style.fontWeight = '600';
+            errTitle.style.color = '#c0392b';
+            errTitle.style.marginBottom = '6px';
+            errBox.appendChild(errTitle);
+
+            uniqueHints.forEach(h => {
+                const li = document.createElement('div');
+                li.textContent = `• ${h}`;
+                li.style.fontSize = '12px';
+                li.style.color = '#7b1f1f';
+                li.style.lineHeight = '1.4';
+                errBox.appendChild(li);
+            });
+            content.appendChild(errBox);
+        }
+
         const socProgressContainer = document.createElement('div');
         socProgressContainer.style.marginTop = '15px';
         
