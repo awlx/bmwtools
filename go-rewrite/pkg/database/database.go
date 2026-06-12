@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -30,10 +31,18 @@ func New(dbPath string) (*Manager, error) {
 		log.Printf("Ensuring directory exists: %s", dir)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	// Open with pragmas that prevent the intermittent "database is locked"
+	// errors: WAL lets readers run alongside a writer, and a busy timeout makes
+	// callers wait for the lock instead of failing immediately.
+	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_foreign_keys=on&_synchronous=NORMAL"
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
+
+	// SQLite allows only a single writer. Serialising access through one
+	// connection eliminates lock contention from concurrent HTTP handlers.
+	db.SetMaxOpenConns(1)
 
 	m := &Manager{
 		db: db,
@@ -103,140 +112,142 @@ func (m *Manager) initSchema() error {
 	return err
 }
 
-// StoreSessions stores charging sessions in the database
+// StoreSessions stores charging sessions in the database.
+//
+// All sessions in a single upload belong to one vehicle, which is identified by
+// the VIN embedded in the export filename. Using a per-upload vehicle identity
+// (instead of the old per-session identity) means re-uploads from the same car
+// land on the same vehicle row and duplicate sessions are skipped, while
+// genuinely new sessions are appended.
 func (m *Manager) StoreSessions(sessions []data.Session, filename string, userSpecifiedModel string) (bool, error) {
-	// Generate a hash of the content to detect duplicates
+	// Generate a hash of the content to detect duplicate uploads.
 	contentHash := hashSessions(sessions)
 
-	// Start a transaction
+	// Derive a stable, privacy-preserving identity for the vehicle this upload
+	// belongs to. The VIN in the filename gives us a single id per car; if it is
+	// missing we fall back to the file content hash so the upload still maps to
+	// exactly one vehicle rather than one-per-session.
+	vehicleKey := vehicleKeyFromFilename(filename)
+	if vehicleKey == "" {
+		vehicleKey = "content:" + contentHash
+	}
+	finHash := hashFIN(vehicleKey)
+	finPrefix := finHash[:16]
+
+	// Build the vehicle-scoped session ids so two different cars can share the
+	// same charge start timestamp without colliding.
+	storedID := func(s data.Session) string { return finPrefix + "_" + s.ID }
+
+	// Start a transaction. The named return error drives the deferred rollback,
+	// so every early-exit path below assigns to `err` (never a shadowed copy).
 	tx, err := m.db.Begin()
 	if err != nil {
 		return false, err
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			tx.Rollback()
 		}
 	}()
 
-	// Keep track of how many sessions were new vs. duplicates
-	newSessionCount := 0
-	duplicateSessionCount := 0
-
-	// First collect all session IDs to check in a single query for efficiency
-	var sessionIDs []interface{}
-	sessionMap := make(map[string]data.Session)
-	for _, session := range sessions {
-		sessionIDs = append(sessionIDs, session.ID)
-		sessionMap[session.ID] = session
-	}
-
-	// Build the SQL query to find existing sessions in a single database call
+	// Find which of these sessions already exist (scoped to this vehicle).
 	existingSessions := make(map[string]bool)
-	if len(sessionIDs) > 0 {
-		placeholders := make([]string, len(sessionIDs))
-		for i := range placeholders {
+	if len(sessions) > 0 {
+		ids := make([]interface{}, len(sessions))
+		placeholders := make([]string, len(sessions))
+		for i, s := range sessions {
+			ids[i] = storedID(s)
 			placeholders[i] = "?"
 		}
 
-		// Use a parameterized query to find existing sessions
 		query := fmt.Sprintf("SELECT id FROM sessions WHERE id IN (%s)", strings.Join(placeholders, ","))
-
-		// Execute the query with sessionIDs as parameters
-		rows, err := tx.Query(query, sessionIDs...)
-		if err != nil {
-			return false, fmt.Errorf("error checking for existing sessions: %w", err)
+		rows, qErr := tx.Query(query, ids...)
+		if qErr != nil {
+			err = fmt.Errorf("error checking for existing sessions: %w", qErr)
+			return false, err
 		}
-		defer rows.Close()
-
-		// Mark existing sessions
 		for rows.Next() {
 			var id string
-			if err := rows.Scan(&id); err != nil {
+			if scanErr := rows.Scan(&id); scanErr != nil {
+				rows.Close()
+				err = scanErr
 				return false, err
 			}
 			existingSessions[id] = true
-			duplicateSessionCount++
 		}
+		if rowsErr := rows.Err(); rowsErr != nil {
+			rows.Close()
+			err = rowsErr
+			return false, err
+		}
+		rows.Close()
 	}
 
-	// Only record the upload if we have NEW sessions to store
-	if len(sessionIDs) > duplicateSessionCount {
-		// Record the upload - without storing the filename
-		_, err = tx.Exec(
-			"INSERT INTO uploads (content_hash, uploaded_at, session_count) VALUES (?, ?, ?)",
-			contentHash, time.Now(), len(sessions)-duplicateSessionCount,
-		)
-		if err != nil {
-			// If the content hash already exists, check if this is a true duplicate upload
-			if strings.Contains(err.Error(), "UNIQUE constraint failed") && duplicateSessionCount == len(sessionIDs) {
-				return false, nil
-			}
-			// Otherwise, we have some new sessions to process despite the duplicate content hash
-			if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
-				return false, err
-			}
-		}
-	} else if duplicateSessionCount == len(sessionIDs) {
-		// All sessions are duplicates, treat as duplicate upload
+	duplicateSessionCount := len(existingSessions)
+	newSessionCount := len(sessions) - duplicateSessionCount
+
+	// Nothing new in this upload: treat it as a duplicate and don't record it.
+	if newSessionCount <= 0 {
 		return false, nil
 	}
 
-	// Extract and hash FIN from sessions
-	vehicleIDMap := make(map[string]int64)
+	// Record the upload. A duplicate content hash is not fatal here because the
+	// per-session check above already determined there is new data to store.
+	if _, upErr := tx.Exec(
+		"INSERT INTO uploads (content_hash, uploaded_at, session_count) VALUES (?, ?, ?)",
+		contentHash, time.Now(), newSessionCount,
+	); upErr != nil && !strings.Contains(upErr.Error(), "UNIQUE constraint failed") {
+		err = upErr
+		return false, err
+	}
 
-	// Process each session, skipping duplicates
-	for _, session := range sessions {
-		// Skip if this session already exists
-		if existingSessions[session.ID] {
-			continue
+	// Resolve (or create) the single vehicle for this upload.
+	var vehicleID int64
+	vErr := tx.QueryRow("SELECT id FROM vehicles WHERE fin_hash = ?", finHash).Scan(&vehicleID)
+	switch {
+	case vErr == sql.ErrNoRows:
+		model := userSpecifiedModel
+		if model == "" {
+			model = "Unknown BMW EV"
 		}
-
-		// This is a new session
-		newSessionCount++
-
-		// Extract FIN from session ID (using our safer, non-identifiable approach)
-		fin := extractFIN(session.ID)
-		if fin == "" {
-			continue
+		res, insErr := tx.Exec(
+			"INSERT INTO vehicles (fin_hash, model, created_at) VALUES (?, ?, ?)",
+			finHash, model, time.Now(),
+		)
+		if insErr != nil {
+			err = insErr
+			return false, err
 		}
-
-		finHash := hashFIN(fin)
-
-		// Check if we've already processed this vehicle in this batch
-		vehicleID, exists := vehicleIDMap[finHash]
-		if !exists {
-			// Check if this vehicle exists in the database
-			err = tx.QueryRow("SELECT id FROM vehicles WHERE fin_hash = ?", finHash).Scan(&vehicleID)
-			if err == sql.ErrNoRows {
-				// Vehicle doesn't exist, create it
-				var model string
-				if userSpecifiedModel != "" {
-					model = userSpecifiedModel // Use the model specified by the user
-				} else {
-					model = deriveModelFromSession(session) // Fall back to derived model
-				}
-				res, err := tx.Exec(
-					"INSERT INTO vehicles (fin_hash, model, created_at) VALUES (?, ?, ?)",
-					finHash, model, time.Now(),
-				)
-				if err != nil {
-					return false, err
-				}
-				vehicleID, _ = res.LastInsertId()
-			} else if err != nil {
+		vehicleID, _ = res.LastInsertId()
+	case vErr != nil:
+		err = vErr
+		return false, err
+	default:
+		// Vehicle already known: fill in the model if it was previously unknown.
+		if userSpecifiedModel != "" {
+			if _, upErr := tx.Exec(
+				"UPDATE vehicles SET model = ? WHERE id = ? AND (model IS NULL OR model = '' OR model = 'Unknown BMW EV')",
+				userSpecifiedModel, vehicleID,
+			); upErr != nil {
+				err = upErr
 				return false, err
 			}
-			vehicleIDMap[finHash] = vehicleID
+		}
+	}
+
+	// Process each new session.
+	for _, session := range sessions {
+		sid := storedID(session)
+		if existingSessions[sid] {
+			continue
 		}
 
-		// Determine session status
 		status := "failed"
 		if session.SocEnd > session.SocStart {
 			status = "successful"
 		}
 
-		// Hash location for privacy
 		locationHash := ""
 		if session.Location != "" {
 			h := sha256.New()
@@ -244,73 +255,63 @@ func (m *Manager) StoreSessions(sessions []data.Session, filename string, userSp
 			locationHash = hex.EncodeToString(h.Sum(nil))
 		}
 
-		// Store the session with the original provider name - no normalization
-		// We're storing the original provider name as it appears in the data
-		// This way we preserve the full, unmodified provider information
-		_, err = tx.Exec(
+		if _, insErr := tx.Exec(
 			`INSERT INTO sessions 
 			(id, vehicle_id, start_time, end_time, soc_start, soc_end, 
 			energy_from_grid, energy_added_hvb, cost, efficiency, provider, 
 			avg_power, session_time_minutes, status, location_hash) 
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			session.ID, vehicleID, session.StartTime, session.EndTime,
+			sid, vehicleID, session.StartTime, session.EndTime,
 			session.SocStart, session.SocEnd, session.EnergyFromGrid,
 			session.EnergyAddedHvb, session.Cost, session.Efficiency,
 			session.Provider, session.AvgPower, session.SessionTimeMinutes,
 			status, locationHash,
-		)
-		if err != nil {
+		); insErr != nil {
+			err = insErr
 			return false, err
 		}
 
-		// If we can calculate battery health from this session, store it
-		if session.EnergyAddedHvb >= 30 && (session.SocEnd-session.SocStart) >= 20 {
-			// Check if we already have battery health data for this exact session
-			// We're using a more precise query with the actual values
-			// This ensures we don't duplicate battery health data for the same session
+		// Battery-health (SoH) data point. BMW exports almost never include the
+		// measured energyIncreaseHvbKwh, so the HVB energy is usually estimated
+		// from grid energy. We still use those points (otherwise there would be no
+		// SoH curve at all) but record whether the figure was raw or estimated via
+		// is_raw_data. We require a sizeable charge for a reliable extrapolation.
+		socChange := session.SocEnd - session.SocStart
+		if session.EnergyAddedHvb >= 30 && socChange >= 20 {
+			estimatedCapacity := (session.EnergyAddedHvb * 100) / socChange
 
-			// Check for existing battery health record with a more precise query
 			var existingBHCount int
-			err = tx.QueryRow(`SELECT COUNT(*) FROM battery_health 
+			if scanErr := tx.QueryRow(`SELECT COUNT(*) FROM battery_health 
 				WHERE vehicle_id = ? 
 				AND date = ? 
 				AND ABS(estimated_capacity - ?) < 0.01 
 				AND ABS(soc_change - ?) < 0.01`,
-				vehicleID, session.StartTime,
-				(session.EnergyAddedHvb*100)/(session.SocEnd-session.SocStart),
-				session.SocEnd-session.SocStart).Scan(&existingBHCount)
-			if err != nil {
+				vehicleID, session.StartTime, estimatedCapacity, socChange,
+			).Scan(&existingBHCount); scanErr != nil {
+				err = scanErr
 				return false, err
 			}
 
 			if existingBHCount == 0 {
-				estimatedCapacity := (session.EnergyAddedHvb * 100) / (session.SocEnd - session.SocStart)
-				_, err = tx.Exec(
+				if _, insErr := tx.Exec(
 					`INSERT INTO battery_health 
 					(vehicle_id, date, estimated_capacity, soc_change, is_raw_data, mileage) 
 					VALUES (?, ?, ?, ?, ?, ?)`,
 					vehicleID, session.StartTime, estimatedCapacity,
-					session.SocEnd-session.SocStart, true, session.Mileage,
-				)
-				if err != nil {
+					socChange, !session.UsingEstimatedEnergy, session.Mileage,
+				); insErr != nil {
+					err = insErr
 					return false, err
 				}
 			}
 		}
 	}
 
-	// If all sessions were duplicates, consider this a duplicate upload
-	if newSessionCount == 0 && duplicateSessionCount > 0 {
-		tx.Rollback() // Don't save the upload record
-		return false, nil
-	}
-
-	// Commit the transaction
 	if err = tx.Commit(); err != nil {
 		return false, err
 	}
+	committed = true
 
-	// Log how many sessions were new vs duplicates
 	log.Printf("Stored %d new sessions, skipped %d duplicate sessions", newSessionCount, duplicateSessionCount)
 
 	return true, nil
@@ -428,10 +429,13 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 		return []map[string]interface{}{}, nil
 	}
 
+	// Capacity is averaged weighted by SoC change so larger, more reliable charge
+	// sessions dominate the estimate. This matches the weighting used by the
+	// in-memory per-file calculation (data.CalculateEstimatedBatteryCapacity).
 	query := `
 		SELECT 
 			strftime('%Y-%m', bh.date) as month,
-			avg(bh.estimated_capacity) as avg_capacity,
+			sum(bh.estimated_capacity * bh.soc_change) / sum(bh.soc_change) as avg_capacity,
 			sum(bh.soc_change) as total_soc_change,
 			count(*) as data_points,
 			avg(bh.mileage) as avg_mileage,
@@ -446,7 +450,8 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 		args = append(args, modelFilter)
 	}
 
-	query += " GROUP BY strftime('%Y-%m', bh.date), v.model ORDER BY avg_mileage"
+	// Order chronologically so the trend line is plotted in time order.
+	query += " GROUP BY strftime('%Y-%m', bh.date), v.model ORDER BY month"
 
 	rows, err := m.db.Query(query, args...)
 	if err != nil {
@@ -650,40 +655,33 @@ func hashSessions(sessions []data.Session) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// extractFIN extracts a non-identifiable vehicle identifier from session data
-// This deliberately does NOT extract the actual FIN, but creates a pseudonymous identifier
-func extractFIN(sessionID string) string {
-	// Instead of extracting an actual FIN, we'll just use a session-specific hash
-	// This approach ensures we never store or process the actual FIN
-	return sessionID
+// vinPattern matches a 17-character BMW VIN/FIN. VINs never contain I, O or Q.
+var vinPattern = regexp.MustCompile(`[A-HJ-NPR-Z0-9]{17}`)
+
+// vehicleKeyFromFilename extracts the VIN/FIN embedded in a BMW CarData export
+// filename (e.g. "BMW-CarData-Ladehistorie_<FIN>_01-03-2025.json").
+// The raw VIN is never stored; callers hash it via hashFIN for privacy. Returns
+// an empty string when no VIN can be found so the caller can fall back to a
+// content-based key.
+func vehicleKeyFromFilename(filename string) string {
+	if filename == "" {
+		return ""
+	}
+	// Strip directory and extension, then upper-case for a stable match.
+	base := strings.ToUpper(filepath.Base(filename))
+	if idx := strings.LastIndex(base, "."); idx >= 0 {
+		base = base[:idx]
+	}
+	return vinPattern.FindString(base)
 }
 
 // hashFIN creates a strong one-way hash with salt for privacy
-func hashFIN(sessionIdentifier string) string {
+func hashFIN(vehicleIdentifier string) string {
 	// Add a salt to make it even more secure against brute-force attacks
 	// Using a fixed salt that's specific to this application
 	salt := "BMWToolsAnonymousFleetStats2025"
 
 	h := sha256.New()
-	h.Write([]byte(salt + sessionIdentifier))
+	h.Write([]byte(salt + vehicleIdentifier))
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// deriveModelFromSession tries to determine the BMW model from session data
-func deriveModelFromSession(session data.Session) string {
-	// This is a placeholder. In reality, the model would need to be determined
-	// from the session data based on your specific data structure.
-	// It might be embedded in the data or derivable from the FIN.
-
-	// Example logic:
-	if strings.Contains(session.ID, "i3") {
-		return "BMW i3"
-	} else if strings.Contains(session.ID, "i4") {
-		return "BMW i4"
-	} else if strings.Contains(session.ID, "iX") {
-		return "BMW iX"
-	}
-
-	// Default if we can't determine
-	return "Unknown BMW EV"
 }

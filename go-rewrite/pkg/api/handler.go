@@ -288,6 +288,13 @@ func (h *Handler) GetSessions(c *gin.Context) {
 			"session_time_minutes":   s.SessionTimeMinutes,
 			"provider":               s.Provider,
 			"using_estimated_energy": s.UsingEstimatedEnergy,
+			"charging_duration_sec":  s.ChargingDurationSec,
+			"is_preconditioned":      s.IsPreconditioned,
+			"time_zone":              s.TimeZone,
+			"mileage_unit":           s.MileageUnit,
+			"charging_blocks":        s.ChargingBlocks,
+			"error_hints":            s.ErrorHints,
+			"failed":                 s.Failed,
 			"label":                  fmt.Sprintf("%s - %s", s.StartTime.Format("2006-01-02 15:04"), s.Location),
 		})
 	}

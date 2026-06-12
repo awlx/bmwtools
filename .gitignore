@@ -10,6 +10,14 @@ __pycache__/**
 !go-rewrite/traefik/traefik.yml
 !go-rewrite/traefik/dynamic/*.yml.example
 
+# SQLite databases and backups may contain real FINs/location data — never commit
+*.db
+*.db-wal
+*.db-shm
+*.db.regroup_bak_*
+go-rewrite/data/
+go-rewrite/bmwtools_prod.db
+
 # GitHub Actions local testing
 .act/
 

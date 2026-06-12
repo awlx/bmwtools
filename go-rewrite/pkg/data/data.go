@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,14 @@ func NewManager() *Manager {
 // SetSessions sets the sessions data to the provided sessions
 func (m *Manager) SetSessions(sessions []Session) {
 	m.sessions = sessions
+}
+
+// ChargingBlock is one measured segment of a charging session with its own
+// average grid power and time window. Together the blocks form the power curve.
+type ChargingBlock struct {
+	StartTime time.Time `json:"start_time"`
+	EndTime   time.Time `json:"end_time"`
+	PowerKw   float64   `json:"power_kw"`
 }
 
 // Session represents a charging session
@@ -47,6 +56,15 @@ type Session struct {
 	SessionTimeMinutes   float64   `json:"session_time_minutes"`
 	Provider             string    `json:"provider"`
 	UsingEstimatedEnergy bool      `json:"using_estimated_energy"`
+
+	// Fields derived from newer BMW CarData exports.
+	ChargingDurationSec int64           `json:"charging_duration_sec"` // active charging time (excludes idle)
+	IsPreconditioned    bool            `json:"is_preconditioned"`     // battery preconditioning was active
+	TimeZone            string          `json:"time_zone"`             // IANA zone, e.g. "Europe/Berlin"
+	MileageUnit         string          `json:"mileage_unit"`          // "KM" or "MI"
+	ChargingBlocks      []ChargingBlock `json:"charging_blocks"`       // per-block power curve
+	ErrorHints          []string        `json:"error_hints"`           // reported charging-fault hints
+	Failed              bool            `json:"failed"`                // no energy delivered / no SoC gain
 }
 
 // RawSession is the raw BMW CarData format
@@ -67,8 +85,18 @@ type RawSession struct {
 	} `json:"chargingLocation"`
 	ChargingBlocks []struct {
 		AveragePowerGridKw float64 `json:"averagePowerGridKw"`
+		StartTime          int64   `json:"startTime"`
+		EndTime            int64   `json:"endTime"`
 	} `json:"chargingBlocks"`
-	Mileage             int `json:"mileage"`
+	Mileage                    int    `json:"mileage"`
+	MileageUnits               string `json:"mileageUnits"`
+	TimeZone                   string `json:"timeZone"`
+	TotalChargingDurationSec   int64  `json:"totalChargingDurationSec"`
+	IsPreconditioningActivated bool   `json:"isPreconditioningActivated"`
+	BusinessErrors             []struct {
+		CreationTime string `json:"creationTime"`
+		Hint         string `json:"hint"`
+	} `json:"businessErrors"`
 	PublicChargingPoint struct {
 		PotentialChargingPointMatches []struct {
 			ProviderName string `json:"providerName"`
@@ -147,14 +175,43 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 
 		var sumPower float64
 		gridPowerStart := make([]float64, len(raw.ChargingBlocks))
+		chargingBlocks := make([]ChargingBlock, 0, len(raw.ChargingBlocks))
 		for i, block := range raw.ChargingBlocks {
 			sumPower += block.AveragePowerGridKw
 			gridPowerStart[i] = block.AveragePowerGridKw
+			cb := ChargingBlock{PowerKw: block.AveragePowerGridKw}
+			if block.StartTime > 0 {
+				cb.StartTime = time.Unix(block.StartTime, 0)
+			}
+			if block.EndTime > 0 {
+				cb.EndTime = time.Unix(block.EndTime, 0)
+			}
+			chargingBlocks = append(chargingBlocks, cb)
 		}
 		avgPower := sumPower / math.Max(float64(len(raw.ChargingBlocks)), 1)
 
 		mileage := float64(raw.Mileage)
-		sessionTimeMinutes := endTime.Sub(startTime).Minutes()
+		// Prefer the authoritative active-charging duration; fall back to the
+		// wall-clock span only when it is missing (and guard against a missing
+		// endTime, which would otherwise yield a nonsensical negative value).
+		sessionTimeMinutes := 0.0
+		if raw.TotalChargingDurationSec > 0 {
+			sessionTimeMinutes = float64(raw.TotalChargingDurationSec) / 60.0
+		} else if raw.EndTime > 0 && endTime.After(startTime) {
+			sessionTimeMinutes = endTime.Sub(startTime).Minutes()
+		}
+
+		// Collect the reported charging-fault hints, if any.
+		var errorHints []string
+		for _, be := range raw.BusinessErrors {
+			if be.Hint != "" {
+				errorHints = append(errorHints, be.Hint)
+			}
+		}
+		// A session counts as failed when no energy was delivered and the battery
+		// did not gain any charge. Error hints alone don't mean failure: many
+		// sessions report a transient hint but still charge successfully.
+		failed := energyFromGrid <= 0 && socEnd <= socStart
 
 		provider := "Unknown"
 		if len(raw.PublicChargingPoint.PotentialChargingPointMatches) > 0 {
@@ -180,6 +237,13 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 			SessionTimeMinutes:   sessionTimeMinutes,
 			Provider:             provider,
 			UsingEstimatedEnergy: energyIncreaseHvb != raw.EnergyIncreaseHvbKwh,
+			ChargingDurationSec:  raw.TotalChargingDurationSec,
+			IsPreconditioned:     raw.IsPreconditioningActivated,
+			TimeZone:             raw.TimeZone,
+			MileageUnit:          raw.MileageUnits,
+			ChargingBlocks:       chargingBlocks,
+			ErrorHints:           errorHints,
+			Failed:               failed,
 		}
 
 		sessions = append(sessions, session)
@@ -545,11 +609,31 @@ func (m *Manager) GetSessionStats() map[string]interface{} {
 	totalSuccessfulSessions := 0
 	failedProviders := make(map[string]int)
 	successfulProviders := make(map[string]int)
+	failureReasons := make(map[string]int)
+	errorReasons := make(map[string]int)
+	sessionsWithErrors := 0
+	preconditionedSessions := 0
 
 	for _, session := range m.sessions {
+		if session.IsPreconditioned {
+			preconditionedSessions++
+		}
+		// Only treat reported hints as real charging errors when the session
+		// failed to deliver any charge. Sessions that continued charging
+		// (e.g. an AC charger pausing and resuming) emit transient hints but
+		// are not actual failures.
+		if session.Failed && len(session.ErrorHints) > 0 {
+			sessionsWithErrors++
+			for _, h := range session.ErrorHints {
+				errorReasons[normalizeHint(h)]++
+			}
+		}
 		if session.SocEnd == session.SocStart {
 			totalFailedSessions++
 			failedProviders[session.Provider]++
+			for _, h := range session.ErrorHints {
+				failureReasons[normalizeHint(h)]++
+			}
 		} else {
 			totalSuccessfulSessions++
 			successfulProviders[session.Provider]++
@@ -627,7 +711,48 @@ func (m *Manager) GetSessionStats() map[string]interface{} {
 		"total_successful_sessions": totalSuccessfulSessions,
 		"top_failed_providers":      limitedFailedProviders,
 		"top_successful_providers":  limitedSuccessfulProviders,
+		"failure_reasons":           failureReasonList(failureReasons),
+		"error_breakdown":           failureReasonList(errorReasons),
+		"sessions_with_errors":      sessionsWithErrors,
+		"preconditioned_sessions":   preconditionedSessions,
 	}
+}
+
+// normalizeHint maps BMW's verbose fault hints to a short, stable label so they
+// can be aggregated into a small set of categories.
+func normalizeHint(hint string) string {
+	switch {
+	case strings.Contains(hint, "power supply"):
+		return "Power supply issue"
+	case strings.Contains(hint, "charging station"):
+		return "Charging station issue"
+	case strings.Contains(hint, "authentication"):
+		return "Authentication/payment issue"
+	case strings.Contains(hint, "repeat the plug-in"):
+		return "Plug-in retry required"
+	case hint == "":
+		return "Unspecified"
+	default:
+		return hint
+	}
+}
+
+// failureReasonList turns the reason->count map into a slice sorted by count.
+func failureReasonList(reasons map[string]int) []map[string]interface{} {
+	type rc struct {
+		reason string
+		count  int
+	}
+	list := make([]rc, 0, len(reasons))
+	for r, c := range reasons {
+		list = append(list, rc{r, c})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].count > list[j].count })
+	out := make([]map[string]interface{}, 0, len(list))
+	for _, x := range list {
+		out = append(out, map[string]interface{}{"reason": x.reason, "count": x.count})
+	}
+	return out
 }
 
 // Helper functions for finding minimum and maximum of two ints
