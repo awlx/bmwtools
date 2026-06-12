@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BMW CarData - Anonymous Charging Statistics</title>
+    <!-- Set theme before any paint to avoid flash of incorrect theme -->
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('bmw-theme');
+                var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        })();
+    </script>
+    <script src="/static/js/theme.js"></script>
     <!-- CSS will be loaded dynamically with cache busting -->
     <!-- Include Plotly.js -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -47,17 +60,18 @@
     <style>
         /* Additional styles specific to the statistics page */
         .stats-card {
-            background-color: white;
-            border-radius: 12px;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 14px;
             padding: 20px;
             margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: var(--shadow-sm);
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
         }
         
         .stats-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-md);
         }
         
         .stats-header {
@@ -66,7 +80,7 @@
             align-items: center;
             margin-bottom: 15px;
             padding-bottom: 10px;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid var(--border);
         }
         
         .stats-count {
@@ -74,11 +88,12 @@
             font-weight: bold;
             margin-top: 10px;
             margin-bottom: 5px;
+            color: var(--heading);
         }
         
         .stats-label {
             font-size: 14px;
-            color: #666;
+            color: var(--muted);
         }
         
         .stats-grid {
@@ -91,22 +106,23 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
+            color: var(--text);
         }
         
         .stats-table th, .stats-table td {
             padding: 10px;
             text-align: left;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid var(--border);
         }
         
         .stats-table th {
             font-weight: 600;
-            color: #333;
-            background-color: #f8f9fa;
+            color: var(--heading);
+            background-color: var(--surface-2);
         }
         
         .stats-table tr:hover {
-            background-color: #f8f9fa;
+            background-color: var(--surface-2);
         }
         
         .success-rate {
@@ -140,7 +156,7 @@
         
         .notice {
             text-align: center;
-            color: #666;
+            color: var(--muted);
             margin: 40px 0;
             font-style: italic;
         }
@@ -149,6 +165,10 @@
 <body>
     <div class="container">
         <header>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+                <span class="icon-moon" aria-hidden="true">🌙</span>
+                <span class="icon-sun" aria-hidden="true">☀️</span>
+            </button>
             <h1>BMW CarData - Anonymous Charging Statistics</h1>
             <nav class="main-nav">
                 <ul>

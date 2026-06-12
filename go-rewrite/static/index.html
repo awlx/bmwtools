@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BMW CarData - Charging Session Dashboard</title>
+    <!-- Set theme before any paint to avoid flash of incorrect theme -->
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('bmw-theme');
+                var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        })();
+    </script>
+    <script src="/static/js/theme.js"></script>
     <!-- CSS will be loaded dynamically with cache busting -->
     <!-- Include Plotly.js -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -50,6 +63,10 @@
 <body>
     <div class="container">
         <header>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+                <span class="icon-moon" aria-hidden="true">🌙</span>
+                <span class="icon-sun" aria-hidden="true">☀️</span>
+            </button>
             <h1>BMW CarData - Charging Session Dashboard</h1>
             <nav class="main-nav">
                 <ul>

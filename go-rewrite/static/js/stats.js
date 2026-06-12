@@ -1,43 +1,71 @@
 // BMW Tools - Anonymous Statistics Dashboard
 
-// Plotly template for better styling (copied from main app.js)
-const plotlyTemplate = {
-    layout: {
-        paper_bgcolor: '#ffffff',
-        plot_bgcolor: '#ffffff',
-        font: {
-            family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-            color: '#444',
-            size: 12
-        },
-        title: {
-            font: {
-                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-                size: 18,
-                color: '#333'
-            }
-        },
-        colorway: ['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6', '#1abc9c', '#34495e', '#7f8c8d', '#d35400', '#c0392b'],
-        legend: {
-            bgcolor: '#ffffff',
-            bordercolor: '#f0f0f0',
-            borderwidth: 1,
-            font: {
-                family: 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-                size: 12,
-                color: '#555'
-            }
-        },
-        xaxis: {
-            gridcolor: '#f0f0f0',
-            zerolinecolor: '#e0e0e0'
-        },
-        yaxis: {
-            gridcolor: '#f0f0f0',
-            zerolinecolor: '#e0e0e0'
-        }
+const PLOTLY_FONT_FAMILY = 'SF Pro Display, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
+// Read a CSS custom property (with a fallback) for use inside Plotly layout
+// objects, which cannot resolve CSS var() references themselves.
+function themeColor(name, fallback) {
+    try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return v || fallback;
+    } catch (e) {
+        return fallback;
     }
-};
+}
+
+// Build a Plotly template that derives its colours from the active theme so the
+// charts re-skin correctly when the user toggles light/dark mode.
+function buildPlotlyTemplate() {
+    const themeLayout = (window.BMWTheme && window.BMWTheme.plotlyLayout)
+        ? window.BMWTheme.plotlyLayout()
+        : {};
+    const text = themeColor('--text', '#2c3e50');
+    const heading = themeColor('--heading', '#2c3e50');
+    const muted = themeColor('--muted', '#6b7785');
+    const grid = themeColor('--track', '#f0f0f0');
+    const border = themeColor('--border', '#e0e0e0');
+    const cardBg = themeColor('--card-bg', '#ffffff');
+    return {
+        layout: {
+            paper_bgcolor: cardBg,
+            plot_bgcolor: cardBg,
+            font: {
+                family: PLOTLY_FONT_FAMILY,
+                color: text,
+                size: 12
+            },
+            title: {
+                font: {
+                    family: PLOTLY_FONT_FAMILY,
+                    size: 18,
+                    color: heading
+                }
+            },
+            colorway: ['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6', '#1abc9c', '#34495e', '#7f8c8d', '#d35400', '#c0392b'],
+            legend: {
+                bgcolor: cardBg,
+                bordercolor: border,
+                borderwidth: 1,
+                font: {
+                    family: PLOTLY_FONT_FAMILY,
+                    size: 12,
+                    color: muted
+                }
+            },
+            xaxis: {
+                gridcolor: grid,
+                zerolinecolor: border
+            },
+            yaxis: {
+                gridcolor: grid,
+                zerolinecolor: border
+            },
+            ...themeLayout
+        }
+    };
+}
+
+let plotlyTemplate = buildPlotlyTemplate();
 
 console.log('stats.js loaded - ' + new Date().toISOString());
 
@@ -61,6 +89,7 @@ async function initStatsDashboard() {
         }
         
         const data = await response.json();
+        window.__statsData = data;
         
         // Update the UI with the data
         updateGlobalStats(data.global_stats, data.soc_stats);
@@ -262,7 +291,7 @@ function createProviderFailureChart(providers) {
         textposition: 'outside',
         textfont: {
             size: 11,
-            color: '#333'
+            color: themeColor('--text', '#2c3e50')
         },
         hovertemplate: '<b>%{x}</b><br>Failure Rate: %{y:.1f}%<br>Failed: %{text}<extra></extra>',
         width: 0.6 // Make bars narrower
@@ -272,8 +301,7 @@ function createProviderFailureChart(providers) {
         title: {
             text: 'Charging Failure Rates by Provider',
             font: { size: 20 }
-        },
-        xaxis: {
+        },        xaxis: {
             title: 'Provider',
             tickangle: -45,
             tickfont: {
@@ -347,7 +375,7 @@ function createSessionOutcomesChart(globalStats) {
         textposition: 'outside',
         textfont: {
             size: 14,
-            color: '#333'
+            color: themeColor('--text', '#2c3e50')
         },
         hoverinfo: 'label+value+percent',
         hole: 0.4, // Create a donut chart for better visual appeal
@@ -452,7 +480,7 @@ function createEnergyByProviderChart(providers) {
         textposition: 'outside',
         textfont: {
             size: 11,
-            color: '#333'
+            color: themeColor('--text', '#2c3e50')
         },
         hovertemplate: '<b>%{x}</b><br>Total Energy: %{y:.1f} kWh<br>Sessions: %{text}<extra></extra>',
         width: 0.6 // Make bars narrower
@@ -518,3 +546,15 @@ function showErrorMessage(message) {
 }
 
 // We removed the formatProviderName function as we want to display the original provider names exactly as stored in the database
+
+// Re-skin the Plotly charts when the user toggles light/dark mode. The template
+// is rebuilt from the now-current CSS tokens and the charts are re-rendered from
+// the cached stats payload.
+window.addEventListener('bmwthemechange', function() {
+    plotlyTemplate = buildPlotlyTemplate();
+    const data = window.__statsData;
+    if (!data) return;
+    createProviderFailureChart(data.providers);
+    createSessionOutcomesChart(data.global_stats);
+    createEnergyByProviderChart(data.providers);
+});
