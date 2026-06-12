@@ -2370,48 +2370,12 @@ function createChargeDetailsGraph() {
         line: { color: 'blue' }
     }];
 
-    // Build a real power curve from the per-block data when available.
-    const blocks = (currentSession.charging_blocks || []).filter(b => b.start_time && b.power_kw > 0);
-    let hasPower = false;
-    if (blocks.length > 0) {
-        const px = [];
-        const py = [];
-        blocks.forEach(b => {
-            const start = new Date(b.start_time);
-            const end = (b.end_time && new Date(b.end_time) > start) ? new Date(b.end_time) : start;
-            // Draw each block as a horizontal segment so the curve shows the
-            // actual power profile (and any pauses) over time.
-            px.push(start, end);
-            py.push(b.power_kw, b.power_kw);
-        });
-        data.push({
-            x: px,
-            y: py,
-            mode: 'lines',
-            type: 'scatter',
-            name: 'Grid power (kW)',
-            yaxis: 'y2',
-            line: { color: '#e67e22', width: 2 }
-        });
-        hasPower = true;
-    }
-
     const layout = {
         title: 'Charge Details',
         xaxis: { title: 'Time' },
         yaxis: { title: 'SOC (%)', rangemode: 'tozero' },
-        template: plotlyTemplate,
-        showlegend: hasPower
+        template: plotlyTemplate
     };
-    if (hasPower) {
-        layout.yaxis2 = {
-            title: 'Power (kW)',
-            overlaying: 'y',
-            side: 'right',
-            rangemode: 'tozero',
-            showgrid: false
-        };
-    }
 
     Plotly.newPlot('charge-details-graph', data, layout);
 }
@@ -2716,22 +2680,28 @@ function createCombinedGauges() {
         
         content.appendChild(table);
 
-        // Show any reported charging-fault hints for this session.
+        // Show any reported charging-fault hints for this session. Only flag
+        // them as errors when the session actually failed to charge. If the
+        // session still charged (e.g. an AC charger paused and resumed) the
+        // hints are transient and shown as an informational note instead.
         const hints = currentSession.error_hints || [];
         if (hints.length > 0) {
             const uniqueHints = [...new Set(hints)];
+            const failed = currentSession.failed;
             const errBox = document.createElement('div');
             errBox.style.marginTop = '15px';
             errBox.style.padding = '10px 12px';
-            errBox.style.backgroundColor = '#fff4f4';
-            errBox.style.border = '1px solid #f5c2c2';
+            errBox.style.backgroundColor = failed ? '#fff4f4' : '#f4f8ff';
+            errBox.style.border = failed ? '1px solid #f5c2c2' : '1px solid #c2d4f5';
             errBox.style.borderRadius = '8px';
 
             const errTitle = document.createElement('div');
-            errTitle.textContent = `⚠️ Charging issues reported (${hints.length})`;
+            errTitle.textContent = failed
+                ? `⚠️ Charging issues reported (${hints.length})`
+                : `ℹ️ Charging paused/resumed (${hints.length} reported)`;
             errTitle.style.fontSize = '13px';
             errTitle.style.fontWeight = '600';
-            errTitle.style.color = '#c0392b';
+            errTitle.style.color = failed ? '#c0392b' : '#1f4e7b';
             errTitle.style.marginBottom = '6px';
             errBox.appendChild(errTitle);
 
@@ -2739,7 +2709,7 @@ function createCombinedGauges() {
                 const li = document.createElement('div');
                 li.textContent = `• ${h}`;
                 li.style.fontSize = '12px';
-                li.style.color = '#7b1f1f';
+                li.style.color = failed ? '#7b1f1f' : '#1f4e7b';
                 li.style.lineHeight = '1.4';
                 errBox.appendChild(li);
             });

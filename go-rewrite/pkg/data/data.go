@@ -618,7 +618,11 @@ func (m *Manager) GetSessionStats() map[string]interface{} {
 		if session.IsPreconditioned {
 			preconditionedSessions++
 		}
-		if len(session.ErrorHints) > 0 {
+		// Only treat reported hints as real charging errors when the session
+		// failed to deliver any charge. Sessions that continued charging
+		// (e.g. an AC charger pausing and resuming) emit transient hints but
+		// are not actual failures.
+		if session.Failed && len(session.ErrorHints) > 0 {
 			sessionsWithErrors++
 			for _, h := range session.ErrorHints {
 				errorReasons[normalizeHint(h)]++
