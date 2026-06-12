@@ -62,26 +62,27 @@ func (s *SessionStore) CreateSession() string {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	// Generate a random ID using crypto/rand
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		// Fallback to current time if random generation fails
-		sessionID := hex.EncodeToString([]byte(time.Now().String()))
-		now := time.Now()
-
-		s.sessions[sessionID] = &SessionData{
-			ID:           sessionID,
-			DataManager:  data.NewManager(),
-			CreatedAt:    now,
-			LastAccessed: now,
+	// Generate a cryptographically-secure, unguessable 256-bit session ID.
+	// We never fall back to a predictable (e.g. time-based) value: two users
+	// generating predictable IDs simultaneously could collide onto the same
+	// session and see each other's data. crypto/rand.Read does not fail on
+	// supported platforms; if it ever does, the system is fundamentally
+	// broken and we fail loudly rather than hand out a weak session ID.
+	var sessionID string
+	for {
+		bytes := make([]byte, 32)
+		if _, err := rand.Read(bytes); err != nil {
+			panic("bmwtools: secure random source unavailable: " + err.Error())
 		}
-
-		return sessionID
+		sessionID = hex.EncodeToString(bytes)
+		// Guard against the astronomically unlikely collision with an
+		// existing session so we never reuse another user's session ID.
+		if _, exists := s.sessions[sessionID]; !exists {
+			break
+		}
 	}
 
-	sessionID := hex.EncodeToString(bytes)
 	now := time.Now()
-
 	s.sessions[sessionID] = &SessionData{
 		ID:           sessionID,
 		DataManager:  data.NewManager(),

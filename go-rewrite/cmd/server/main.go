@@ -19,9 +19,16 @@ func main() {
 	// Set up the Gin router
 	r := gin.Default()
 
-	// Configure CORS
+	// Configure CORS.
+	// SECURITY: sessions are authenticated via an HttpOnly "session_id" cookie.
+	// Allowing all origins is only safe as long as credentials are NOT allowed
+	// for cross-origin requests: with AllowCredentials=false, browsers will not
+	// attach the session cookie to cross-origin XHR/fetch, so another site can
+	// never read a victim's session data. Do NOT set AllowCredentials=true while
+	// AllowAllOrigins=true — that would let any website read users' data.
 	config := cors.DefaultConfig()
 	config.AllowAllOrigins = true
+	config.AllowCredentials = false
 	config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
 	r.Use(cors.New(config))

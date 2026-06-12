@@ -39,6 +39,17 @@ func (h *Handler) GetVersion(c *gin.Context) {
 	})
 }
 
+// setSessionCookie writes the session_id cookie with hardened attributes.
+// The cookie is HttpOnly (not readable by JS), SameSite=Lax (not sent on
+// cross-site requests), and Secure when running in release mode (served
+// behind TLS) so it is never transmitted over plaintext HTTP.
+func (h *Handler) setSessionCookie(c *gin.Context, sessionID string) {
+	secure := gin.Mode() == gin.ReleaseMode
+	c.SetSameSite(http.SameSiteLaxMode)
+	// 30 minute lifetime, path "/", host-only cookie, HttpOnly=true.
+	c.SetCookie("session_id", sessionID, 1800, "/", "", secure, true)
+}
+
 // GetAnonymousStats returns anonymous statistics about charging sessions
 func (h *Handler) GetAnonymousStats(c *gin.Context) {
 	// Check if we have a database manager
@@ -108,9 +119,8 @@ func (h *Handler) UploadJSON(c *gin.Context) {
 	}
 	sessionID, session := h.sessions.GetOrCreateSession(sessionID)
 
-	// Always set the cookie to refresh expiration time
-	// Set cookie to expire in 30 minutes
-	c.SetCookie("session_id", sessionID, 1800, "/", "", false, true)
+	// Always (re)set the cookie to refresh the 30 minute expiration time.
+	h.setSessionCookie(c, sessionID)
 
 	// Process the file with the session's data manager
 	err = session.DataManager.LoadJSON(file)
@@ -198,9 +208,8 @@ func (h *Handler) LoadDemoData(c *gin.Context) {
 	}
 	sessionID, session := h.sessions.GetOrCreateSession(sessionID)
 
-	// Always set the cookie to refresh expiration time
-	// Set cookie to expire in 30 minutes
-	c.SetCookie("session_id", sessionID, 1800, "/", "", false, true)
+	// Always (re)set the cookie to refresh the 30 minute expiration time.
+	h.setSessionCookie(c, sessionID)
 
 	// Process the file with the session's data manager
 	err = session.DataManager.LoadJSON(file)
