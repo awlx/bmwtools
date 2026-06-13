@@ -224,8 +224,10 @@ async function handleFileUpload(event) {
 
 // Generic file upload function
 async function uploadFile(file) {
-    // Check if file name contains the expected pattern
-    if (!file.name.includes('BMW-CarData-')) {
+    // Check if file name contains the expected pattern. BMW exports use both
+    // "BMW-CarData-" and "BMWi-CarData-" (electric branding) prefixes, so accept
+    // either rather than warning on a perfectly valid export.
+    if (!/BMWi?-CarData-/i.test(file.name)) {
         const proceed = confirm("The file doesn't match the expected pattern 'BMW-CarData-Ladehistorie_*'. Are you sure you want to upload it?");
         if (!proceed) return;
     }
