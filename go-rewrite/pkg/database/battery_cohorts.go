@@ -109,16 +109,20 @@ type CohortPoint struct {
 // "kwh", Axis is "km" or "time". For metric "kwh" with axis "time", Month holds
 // the calendar month and X is unset.
 type CohortTrendPoint struct {
-	Cohort   int     `json:"cohort"`
-	Metric   string  `json:"metric"`
-	Axis     string  `json:"axis"`
-	X        float64 `json:"x"`
-	Month    string  `json:"month,omitempty"`
-	Value    float64 `json:"value"`
-	P25      float64 `json:"p25"`
-	P75      float64 `json:"p75"`
-	Vehicles int     `json:"vehicles"`
-	Points   int     `json:"points"`
+	Cohort int     `json:"cohort"`
+	Metric string  `json:"metric"`
+	Axis   string  `json:"axis"`
+	X      float64 `json:"x"`
+	Month  string  `json:"month,omitempty"`
+	Value  float64 `json:"value"`
+	P25    float64 `json:"p25"`
+	P75    float64 `json:"p75"`
+	// Vehicles is the number of cars that link this step to the previous
+	// step (for the start bin: the cars in the bin). BinVehicles is the number
+	// of cars in the bin.
+	Vehicles    int `json:"vehicles"`
+	BinVehicles int `json:"bin_vehicles"`
+	Points      int `json:"points"`
 	// Reliable is true when the bin has at least minVehiclesForTrend cars.
 	Reliable bool `json:"reliable"`
 }
@@ -618,22 +622,46 @@ type trendKey struct {
 	bin    string
 }
 
+type trendSeriesKey struct {
+	cohort int
+	metric string
+	axis   string
+}
+
 type trendBin struct {
+	idx      int // order of the bin inside its trend line
 	x        float64
 	month    string
 	vehicles map[int64]*[2]float64 // weighted sum, weight
 	points   int
 }
 
+func (b *trendBin) values() map[int64]float64 {
+	out := make(map[int64]float64, len(b.vehicles))
+	for id, acc := range b.vehicles {
+		out[id] = acc[0] / acc[1]
+	}
+	return out
+}
+
+func valuesOf(m map[int64]float64) []float64 {
+	out := make([]float64, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
+}
+
 // buildCohortTrends bins points per cohort. Each car is first averaged inside a
-// bin (weighted by SoC change), then the median across cars is taken, so cars
-// with many uploads do not dominate a bin.
+// bin (weighted by SoC change). The line is chain-linked (see chainTrend), so
+// cars that join or leave do not move it. P25/P75 are the spread across cars
+// in the bin.
 func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 	bins := map[trendKey]*trendBin{}
-	add := func(k trendKey, x float64, month string, vid int64, value, weight float64) {
+	add := func(k trendKey, idx int, x float64, month string, vid int64, value, weight float64) {
 		b, ok := bins[k]
 		if !ok {
-			b = &trendBin{x: x, month: month, vehicles: map[int64]*[2]float64{}}
+			b = &trendBin{idx: idx, x: x, month: month, vehicles: map[int64]*[2]float64{}}
 			bins[k] = b
 		}
 		acc, ok := b.vehicles[vid]
@@ -655,69 +683,46 @@ func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 		if v.excluded || v.cohort == unassignedCohortID {
 			continue
 		}
+		hasPct := v.hasBaseline && v.baseline > 0
+		if hasPct {
+			// Every % line starts at 100 % at x = 0: the baseline window.
+			for _, axis := range []string{"km", "time"} {
+				add(trendKey{v.cohort, "pct", axis, "start"}, -1, 0, "", id, 100, 1)
+				bins[trendKey{v.cohort, "pct", axis, "start"}].points = 0
+			}
+		}
 		for _, p := range v.points {
 			if p.Mileage > 0 {
 				bin := math.Floor(p.Mileage / trendKmBin)
-				add(trendKey{v.cohort, "kwh", "km", fmt.Sprint(bin)}, bin*trendKmBin+trendKmBin/2, "", id, p.Capacity, p.SocChange)
+				add(trendKey{v.cohort, "kwh", "km", fmt.Sprint(bin)}, int(bin), bin*trendKmBin+trendKmBin/2, "", id, p.Capacity, p.SocChange)
 			}
-			month := p.Date.UTC().Format("2006-01")
-			add(trendKey{v.cohort, "kwh", "time", month}, 0, month, id, p.Capacity, p.SocChange)
+			d := p.Date.UTC()
+			month := d.Format("2006-01")
+			add(trendKey{v.cohort, "kwh", "time", month}, d.Year()*12+int(d.Month())-1, 0, month, id, p.Capacity, p.SocChange)
 
-			if !v.hasBaseline || v.baseline <= 0 || v.window.contains(p) {
+			if !hasPct || v.window.contains(p) {
 				continue
 			}
 			pct := p.Capacity / v.baseline * 100
 			if v.hasKm && p.Mileage > 0 {
 				bin := math.Floor((p.Mileage - v.firstKm) / trendKmBin)
-				add(trendKey{v.cohort, "pct", "km", fmt.Sprint(bin)}, bin*trendKmBin+trendKmBin/2, "", id, pct, p.SocChange)
+				add(trendKey{v.cohort, "pct", "km", fmt.Sprint(bin)}, int(bin), bin*trendKmBin+trendKmBin/2, "", id, pct, p.SocChange)
 			}
 			months := p.Date.Sub(v.firstDate).Hours() / 24 / daysPerMonth
 			bin := math.Floor(months / trendMonthBin)
-			add(trendKey{v.cohort, "pct", "time", fmt.Sprint(bin)}, bin*trendMonthBin+trendMonthBin/2, "", id, pct, p.SocChange)
+			add(trendKey{v.cohort, "pct", "time", fmt.Sprint(bin)}, int(bin), bin*trendMonthBin+trendMonthBin/2, "", id, pct, p.SocChange)
 		}
 	}
 
-	// Every % trend starts at 100 % at x = 0: the baseline window itself.
-	baselineCars := map[int]int{}
-	for _, v := range series {
-		if !v.excluded && v.cohort != unassignedCohortID && v.hasBaseline && v.baseline > 0 {
-			baselineCars[v.cohort]++
-		}
+	grouped := map[trendSeriesKey][]*trendBin{}
+	for k, b := range bins {
+		sk := trendSeriesKey{k.cohort, k.metric, k.axis}
+		grouped[sk] = append(grouped[sk], b)
 	}
 	trends := []CohortTrendPoint{}
-	for cohort, n := range baselineCars {
-		if n < minVehiclesPerBin {
-			continue
-		}
-		for _, axis := range []string{"km", "time"} {
-			trends = append(trends, CohortTrendPoint{
-				Cohort: cohort, Metric: "pct", Axis: axis, X: 0,
-				Value: 100, P25: 100, P75: 100,
-				Vehicles: n, Reliable: n >= minVehiclesForTrend,
-			})
-		}
-	}
-	for k, b := range bins {
-		if len(b.vehicles) < minVehiclesPerBin {
-			continue
-		}
-		var perVehicle []float64
-		for _, acc := range b.vehicles {
-			perVehicle = append(perVehicle, acc[0]/acc[1])
-		}
-		trends = append(trends, CohortTrendPoint{
-			Cohort:   k.cohort,
-			Metric:   k.metric,
-			Axis:     k.axis,
-			X:        b.x,
-			Month:    b.month,
-			Value:    median(perVehicle),
-			P25:      quantile(perVehicle, 0.25),
-			P75:      quantile(perVehicle, 0.75),
-			Vehicles: len(b.vehicles),
-			Points:   b.points,
-			Reliable: len(b.vehicles) >= minVehiclesForTrend,
-		})
+	for sk, bs := range grouped {
+		sort.Slice(bs, func(i, j int) bool { return bs[i].idx < bs[j].idx })
+		trends = append(trends, chainTrend(sk, bs)...)
 	}
 	sort.Slice(trends, func(i, j int) bool {
 		a, c := trends[i], trends[j]
@@ -736,6 +741,72 @@ func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 		return a.X < c.X
 	})
 	return trends
+}
+
+// chainTrend builds one chain-linked trend line from bins sorted by idx.
+//
+// The line starts at the start bin: the 100 % anchor for "pct", else the first
+// bin with minVehiclesForTrend cars (value: median across cars). Each next
+// step adds the median change of the cars that are in both this bin and the
+// previous bin. A car without a value in the previous bin does not count for
+// that step. The line is reliable until a step has fewer than
+// minVehiclesForTrend linked cars; all later steps are not reliable. Bins
+// before the start bin show their median across cars and are not reliable.
+func chainTrend(sk trendSeriesKey, bs []*trendBin) []CohortTrendPoint {
+	point := func(b *trendBin, value float64, linked int, reliable bool) CohortTrendPoint {
+		all := valuesOf(b.values())
+		return CohortTrendPoint{
+			Cohort: sk.cohort, Metric: sk.metric, Axis: sk.axis,
+			X: b.x, Month: b.month,
+			Value: value, P25: quantile(all, 0.25), P75: quantile(all, 0.75),
+			Vehicles: linked, BinVehicles: len(b.vehicles), Points: b.points,
+			Reliable: reliable,
+		}
+	}
+	start := 0
+	if !(sk.metric == "pct" && bs[0].idx == -1) {
+		for i, b := range bs {
+			if len(b.vehicles) >= minVehiclesForTrend {
+				start = i
+				break
+			}
+		}
+	}
+
+	var out []CohortTrendPoint
+	for _, b := range bs[:start] {
+		if len(b.vehicles) >= minVehiclesPerBin {
+			out = append(out, point(b, median(valuesOf(b.values())), len(b.vehicles), false))
+		}
+	}
+	prev := bs[start].values()
+	value := median(valuesOf(prev))
+	reliable := len(prev) >= minVehiclesForTrend
+	if len(prev) >= minVehiclesPerBin {
+		out = append(out, point(bs[start], value, len(prev), reliable))
+	}
+	for _, b := range bs[start+1:] {
+		cur := b.values()
+		var diffs []float64
+		for id, c := range cur {
+			if p, ok := prev[id]; ok {
+				diffs = append(diffs, c-p)
+			}
+		}
+		if len(diffs) == 0 {
+			// No car links this bin to the line: the line ends here.
+			break
+		}
+		value += median(diffs)
+		if len(diffs) < minVehiclesForTrend {
+			reliable = false
+		}
+		prev = cur
+		if len(cur) >= minVehiclesPerBin {
+			out = append(out, point(b, value, len(diffs), reliable))
+		}
+	}
+	return out
 }
 
 // GetBatteryCohorts loads battery health data (optionally for one model) and

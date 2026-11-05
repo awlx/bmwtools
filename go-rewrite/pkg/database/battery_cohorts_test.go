@@ -2,6 +2,7 @@ package database
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"path/filepath"
 	"strings"
@@ -539,5 +540,80 @@ func TestShortChargesAreIgnored(t *testing.T) {
 		if tr.Value > 80.5 && tr.Metric == "kwh" {
 			t.Errorf("short charge in trend: %+v", tr)
 		}
+	}
+}
+
+func kwhKmTrend(t *testing.T, res BatteryCohortResult) []CohortTrendPoint {
+	t.Helper()
+	if len(res.Cohorts) != 1 {
+		t.Fatalf("cohorts = %+v", res.Cohorts)
+	}
+	var out []CohortTrendPoint
+	for _, tr := range res.Trends {
+		if tr.Metric == "kwh" && tr.Axis == "km" {
+			out = append(out, tr)
+		}
+	}
+	return out
+}
+
+func TestChainTrendLowCarLeavesStaysFlat(t *testing.T) {
+	var pts []BatteryHealthPoint
+	// Flat cars at 74..81 kWh; the two lowest stop at ~20,000 km.
+	for i := 0; i < 8; i++ {
+		n := 40
+		if i < 2 {
+			n = 20
+		}
+		pts = append(pts, car(int64(i+1), "m", 74+float64(i), 500, 0, n)...)
+	}
+	tr := kwhKmTrend(t, AnalyzeBatteryCohorts(pts))
+	if len(tr) < 6 {
+		t.Fatalf("trend = %+v", tr)
+	}
+	for _, b := range tr {
+		approx(t, fmt.Sprintf("value at %v", b.X), b.Value, 77.5, 1e-9)
+		if !b.Reliable {
+			t.Errorf("bin %v not reliable: %+v", b.X, b)
+		}
+	}
+}
+
+func TestChainTrendHighCarJoinsLateStaysFlat(t *testing.T) {
+	var pts []BatteryHealthPoint
+	for i := 0; i < 7; i++ {
+		pts = append(pts, car(int64(i+1), "m", 74+float64(i), 500, 0, 40)...)
+	}
+	// Three flat 84 kWh cars join at 20,500 km.
+	for i := 0; i < 3; i++ {
+		pts = append(pts, car(int64(10+i), "m", 84, 20500, 0, 20)...)
+	}
+	tr := kwhKmTrend(t, AnalyzeBatteryCohorts(pts))
+	for _, b := range tr {
+		approx(t, fmt.Sprintf("value at %v", b.X), b.Value, 77, 1e-9)
+	}
+	// The cross-sectional spread still shows the new cars.
+	if last := tr[len(tr)-1]; last.BinVehicles != 10 || last.P75 < 80 {
+		t.Errorf("last bin = %+v", last)
+	}
+}
+
+func TestChainTrendSteadyDecline(t *testing.T) {
+	var pts []BatteryHealthPoint
+	// 1 kWh per 10,000 km: 0.5 kWh per 5,000 km bin.
+	for id := int64(1); id <= 6; id++ {
+		pts = append(pts, car(id, "m", 80, 500, 1, 40)...)
+	}
+	res := AnalyzeBatteryCohorts(pts)
+	tr := kwhKmTrend(t, res)
+	for i := 1; i < len(tr); i++ {
+		if tr[i].BinVehicles < 6 {
+			continue // partial last bin
+		}
+		approx(t, fmt.Sprintf("step to %v", tr[i].X), tr[i].Value-tr[i-1].Value, -0.5, 1e-6)
+	}
+	pct := pctKmTrend(res, res.Cohorts[0].ID)
+	if pct[0].Value != 100 || pct[len(pct)-1].Value > 96 {
+		t.Errorf("pct trend = %+v", pct)
 	}
 }
