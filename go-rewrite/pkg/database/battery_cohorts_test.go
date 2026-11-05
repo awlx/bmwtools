@@ -456,12 +456,12 @@ func TestTrendBinsWithFewCarsAreNotReliable(t *testing.T) {
 
 func TestPctTrendLeavesOutBaselineWindow(t *testing.T) {
 	var pts []BatteryHealthPoint
-	for id := int64(1); id <= 5; id++ {
+	for id := int64(1); id <= minVehiclesForTrend; id++ {
 		pts = append(pts, car(id, "m", 80, 500, 2, 15)...)
 	}
 	res := AnalyzeBatteryCohorts(pts)
 	tr := pctKmTrend(res, res.Cohorts[0].ID)
-	if len(tr) == 0 || tr[0].X != 0 || tr[0].Value != 100 || tr[0].Vehicles != 5 || !tr[0].Reliable {
+	if len(tr) == 0 || tr[0].X != 0 || tr[0].Value != 100 || tr[0].Vehicles != minVehiclesForTrend || !tr[0].Reliable {
 		t.Fatalf("anchor = %+v", tr)
 	}
 	for _, b := range tr[1:] {
@@ -560,8 +560,10 @@ func kwhKmTrend(t *testing.T, res BatteryCohortResult) []CohortTrendPoint {
 
 func TestTrendLowCarLeavesStaysFlat(t *testing.T) {
 	var pts []BatteryHealthPoint
-	// Flat cars at 74..81 kWh; the two lowest stop at ~20,000 km.
-	for i := 0; i < 8; i++ {
+	// Flat cars at 74, 75, ... kWh; the two lowest stop at ~20,000 km.
+	n := minVehiclesForTrend + 2
+	want := 74 + float64(n-1)/2
+	for i := 0; i < n; i++ {
 		n := 40
 		if i < 2 {
 			n = 20
@@ -573,7 +575,7 @@ func TestTrendLowCarLeavesStaysFlat(t *testing.T) {
 		t.Fatalf("trend = %+v", tr)
 	}
 	for _, b := range tr {
-		approx(t, fmt.Sprintf("value at %v", b.X), b.Value, 77.5, 1e-9)
+		approx(t, fmt.Sprintf("value at %v", b.X), b.Value, want, 1e-9)
 		if !b.Reliable {
 			t.Errorf("bin %v not reliable: %+v", b.X, b)
 		}
@@ -582,19 +584,21 @@ func TestTrendLowCarLeavesStaysFlat(t *testing.T) {
 
 func TestTrendHighCarJoinsLateStaysFlat(t *testing.T) {
 	var pts []BatteryHealthPoint
-	for i := 0; i < 7; i++ {
+	n := minVehiclesForTrend + 1
+	want := 74 + float64(n-1)/2
+	for i := 0; i < n; i++ {
 		pts = append(pts, car(int64(i+1), "m", 74+float64(i), 500, 0, 40)...)
 	}
 	// Three flat 84 kWh cars join at 20,500 km.
 	for i := 0; i < 3; i++ {
-		pts = append(pts, car(int64(10+i), "m", 84, 20500, 0, 20)...)
+		pts = append(pts, car(int64(100+i), "m", 84, 20500, 0, 20)...)
 	}
 	tr := kwhKmTrend(t, AnalyzeBatteryCohorts(pts))
 	for _, b := range tr {
-		approx(t, fmt.Sprintf("value at %v", b.X), b.Value, 77, 1e-9)
+		approx(t, fmt.Sprintf("value at %v", b.X), b.Value, want, 1e-9)
 	}
 	// The cross-sectional spread still shows the new cars.
-	if last := tr[len(tr)-1]; last.BinVehicles != 10 || last.P75 < 80 {
+	if last := tr[len(tr)-1]; last.BinVehicles != n+3 || last.P75 < 80 {
 		t.Errorf("last bin = %+v", last)
 	}
 }

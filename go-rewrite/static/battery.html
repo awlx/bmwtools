@@ -469,7 +469,17 @@
             const unit = axis === 'km' ? 'km' : 'months';
             const hover = `<b>%{y:.1f} %</b><br>%{x:,.0f} ${unit} · %{customdata} cars<extra></extra>`;
             if (faint.length > 0) {
-                // Steps with fewer than 5 cars: faded, not part of the line.
+                // Steps with too few cars: a thin faded line through all
+                // steps, behind the solid line, so it continues the trend.
+                traces.push({
+                    x: tr.map(t => t.x),
+                    y: tr.map(t => t.value),
+                    yaxis: 'y2',
+                    mode: 'lines',
+                    type: 'scatter',
+                    line: { color: hexToRgba(pn.color, 0.4), width: 2, dash: 'dash', shape: 'spline', smoothing: 0.6 },
+                    hoverinfo: 'skip'
+                });
                 traces.push({
                     x: faint.map(t => t.x),
                     y: faint.map(t => t.value),
@@ -477,7 +487,7 @@
                     yaxis: 'y2',
                     mode: 'markers',
                     type: 'scatter',
-                    marker: { size: 6, color: hexToRgba(pn.color, 0.3) },
+                    marker: { size: 4, color: hexToRgba(pn.color, 0.4) },
                     hovertemplate: hover
                 });
             }

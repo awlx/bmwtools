@@ -38,8 +38,8 @@ const (
 	// minVehiclesPerBin is the minimum number of cars for a bin in the output.
 	minVehiclesPerBin = 2
 	// minVehiclesForTrend is the minimum number of cars for a reliable bin.
-	// Only reliable bins form the trend line; the page shows others faded.
-	minVehiclesForTrend = 5
+	// Only reliable bins form the solid line; the page shows others as a faded line.
+	minVehiclesForTrend = 8
 	// Per-car slopes use only cars with enough points and distance.
 	slopeMinPoints = 10
 	// minSlopeVehicles is the minimum number of qualifying cars for a slope.
