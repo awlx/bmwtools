@@ -184,17 +184,6 @@ function setupEventListeners() {
         uploadContainer.addEventListener('drop', handleDrop, false);
     }
     
-    // Function to adjust the similarity threshold
-    window.setProviderSimilarityThreshold = function(threshold) {
-        if (threshold >= 0 && threshold <= 1) {
-            window.providerSimilarityThreshold = threshold;
-            console.log(`Provider similarity threshold set to ${threshold * 100}%`);
-            return true;
-        } else {
-            console.error("Threshold must be between 0 and 1");
-            return false;
-        }
-    };
 }
 
 // Prevent default drag behaviors

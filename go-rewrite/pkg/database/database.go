@@ -490,115 +490,113 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 	return result, rows.Err()
 }
 
-// GetProviderStats returns statistics about charging providers from the database
+// GetProviderStats returns statistics per charge point operator. Stored
+// provider names are cleaned at read time, so old raw names ("HPC/DC IONITY
+// GmbH") and new clean names ("IONITY") fall into one group. Sessions without a
+// known operator are left out.
 func (m *Manager) GetProviderStats() ([]map[string]interface{}, error) {
-	// First, get all providers and their metrics
-	query := `
-		SELECT 
+	rows, err := m.db.Query(`
+		SELECT
 			provider,
-			COUNT(*) as total_sessions,
-			SUM(CASE WHEN status = 'successful' THEN 1 ELSE 0 END) as successful_sessions,
-			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_sessions,
-			AVG(CASE WHEN status = 'successful' THEN efficiency ELSE 0 END) as avg_efficiency,
-			SUM(CASE WHEN status = 'successful' THEN energy_added_hvb ELSE 0 END) as total_energy_added,
-			AVG(CASE WHEN status = 'successful' THEN avg_power ELSE 0 END) as avg_power
+			COUNT(*),
+			SUM(CASE WHEN status = 'successful' THEN 1 ELSE 0 END),
+			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END),
+			SUM(CASE WHEN status = 'successful' THEN efficiency ELSE 0 END),
+			SUM(CASE WHEN status = 'successful' THEN energy_added_hvb ELSE 0 END),
+			SUM(CASE WHEN status = 'successful' THEN avg_power ELSE 0 END)
 		FROM sessions
 		GROUP BY provider
-	`
-
-	// We'll group providers manually to properly normalize them
-	rows, err := m.db.Query(query)
+	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	// Create a map to normalize and combine providers
-	providerMap := make(map[string]map[string]interface{})
-
-	// We're using the comprehensive provider normalization logic
-	// from data.NormalizeProviderName instead of maintaining a separate list here
-
-	// Use the exported NormalizeProviderName function from the data package
-	// instead of duplicating the normalization logic here
-	normalizeProvider := func(provider string) string {
-		return data.NormalizeProviderName(provider)
+	type group struct {
+		names                     map[string]int // clean display variants and their session counts
+		total, successful, failed int
+		effSum, energy, powerSum  float64
 	}
-
+	groups := make(map[string]*group)
 	for rows.Next() {
-		var provider string
-		var totalSessions, successfulSessions, failedSessions int
-		var avgEfficiency, totalEnergyAdded, avgPower float64
-
-		if err := rows.Scan(&provider, &totalSessions, &successfulSessions, &failedSessions,
-			&avgEfficiency, &totalEnergyAdded, &avgPower); err != nil {
+		var provider sql.NullString
+		var total, successful, failed int
+		var effSum, energy, powerSum sql.NullFloat64
+		if err := rows.Scan(&provider, &total, &successful, &failed, &effSum, &energy, &powerSum); err != nil {
 			return nil, err
 		}
-
-		// Normalize the provider name
-		normalizedProvider := normalizeProvider(provider)
-
-		// Check if we already have an entry for this normalized provider
-		if existingStats, exists := providerMap[normalizedProvider]; exists {
-			// Update existing stats
-			existingStats["total_sessions"] = existingStats["total_sessions"].(int) + totalSessions
-			existingStats["successful_sessions"] = existingStats["successful_sessions"].(int) + successfulSessions
-			existingStats["failed_sessions"] = existingStats["failed_sessions"].(int) + failedSessions
-
-			// Weighted average for efficiency and power
-			if successfulSessions > 0 {
-				currentSuccessful := float64(existingStats["successful_sessions"].(int) - successfulSessions)
-				newAvgEfficiency := ((avgEfficiency * float64(successfulSessions)) +
-					(existingStats["avg_efficiency"].(float64) * currentSuccessful)) /
-					float64(existingStats["successful_sessions"].(int))
-				existingStats["avg_efficiency"] = newAvgEfficiency
-
-				newAvgPower := ((avgPower * float64(successfulSessions)) +
-					(existingStats["avg_power"].(float64) * currentSuccessful)) /
-					float64(existingStats["successful_sessions"].(int))
-				existingStats["avg_power"] = newAvgPower
-			}
-
-			existingStats["total_energy_added"] = existingStats["total_energy_added"].(float64) + totalEnergyAdded
-		} else {
-			// Create new entry
-			providerMap[normalizedProvider] = map[string]interface{}{
-				"provider":            normalizedProvider, // Use the normalized name
-				"original_provider":   provider,           // Keep the original name for reference
-				"total_sessions":      totalSessions,
-				"successful_sessions": successfulSessions,
-				"failed_sessions":     failedSessions,
-				"avg_efficiency":      avgEfficiency,
-				"total_energy_added":  totalEnergyAdded,
-				"avg_power":           avgPower,
-			}
+		name := data.CleanProviderName(provider.String)
+		if name == "" {
+			continue
 		}
+		key := data.ProviderKey(name)
+		g := groups[key]
+		if g == nil {
+			g = &group{names: make(map[string]int)}
+			groups[key] = g
+		}
+		g.names[name] += total
+		g.total += total
+		g.successful += successful
+		g.failed += failed
+		g.effSum += effSum.Float64
+		g.energy += energy.Float64
+		g.powerSum += powerSum.Float64
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	// Now convert the map to a slice and calculate success rates
-	var result []map[string]interface{}
-	for _, stats := range providerMap {
-		totalSessions := stats["total_sessions"].(int)
-		successfulSessions := stats["successful_sessions"].(int)
-
-		// Calculate success rate
-		successRate := 0.0
-		if totalSessions > 0 {
-			successRate = float64(successfulSessions) / float64(totalSessions) * 100
+	result := make([]map[string]interface{}, 0, len(groups))
+	for _, g := range groups {
+		display, best := "", -1
+		for name, n := range g.names {
+			if n > best || (n == best && name < display) {
+				display, best = name, n
+			}
 		}
-
-		stats["success_rate"] = successRate
-		stats["avg_efficiency"] = stats["avg_efficiency"].(float64) * 100 // Convert to percentage
-
-		result = append(result, stats)
+		successRate, avgEff, avgPower := 0.0, 0.0, 0.0
+		if g.total > 0 {
+			successRate = float64(g.successful) / float64(g.total) * 100
+		}
+		if g.successful > 0 {
+			avgEff = g.effSum / float64(g.successful) * 100
+			avgPower = g.powerSum / float64(g.successful)
+		}
+		result = append(result, map[string]interface{}{
+			"provider":            display,
+			"total_sessions":      g.total,
+			"successful_sessions": g.successful,
+			"failed_sessions":     g.failed,
+			"success_rate":        successRate,
+			"avg_efficiency":      avgEff,
+			"total_energy_added":  g.energy,
+			"avg_power":           avgPower,
+		})
 	}
-
-	// Sort by total sessions descending
 	sort.Slice(result, func(i, j int) bool {
-		return result[i]["total_sessions"].(int) > result[j]["total_sessions"].(int)
+		ti, tj := result[i]["total_sessions"].(int), result[j]["total_sessions"].(int)
+		if ti != tj {
+			return ti > tj
+		}
+		return result[i]["provider"].(string) < result[j]["provider"].(string)
 	})
+	return result, nil
+}
 
-	return result, rows.Err()
+// GetSessionTotals returns fleet totals over all sessions, with or without a
+// known operator.
+func (m *Manager) GetSessionTotals() (total, successful, failed int, energyAdded float64, err error) {
+	var energy sql.NullFloat64
+	err = m.db.QueryRow(`
+		SELECT
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN status = 'successful' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0),
+			SUM(CASE WHEN status = 'successful' THEN energy_added_hvb ELSE 0 END)
+		FROM sessions
+	`).Scan(&total, &successful, &failed, &energy)
+	return total, successful, failed, energy.Float64, err
 }
 
 // GetSOCStats returns statistics about State of Charge from the database

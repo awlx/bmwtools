@@ -72,15 +72,10 @@ func (h *Handler) GetAnonymousStats(c *gin.Context) {
 		return
 	}
 
-	// Calculate global statistics
-	var totalSessions, totalSuccessful, totalFailed int
-	var totalEnergyAdded float64
-
-	for _, provider := range providerStats {
-		totalSessions += provider["total_sessions"].(int)
-		totalSuccessful += provider["successful_sessions"].(int)
-		totalFailed += provider["failed_sessions"].(int)
-		totalEnergyAdded += provider["total_energy_added"].(float64)
+	totalSessions, totalSuccessful, totalFailed, totalEnergyAdded, err := h.dbManager.GetSessionTotals()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error fetching session totals: %v", err)})
+		return
 	}
 
 	// Calculate global success rate
@@ -542,7 +537,7 @@ func (h *Handler) GetMapData(c *gin.Context) {
 	c.JSON(http.StatusOK, locations)
 }
 
-// GetGroupedProviders returns statistics grouped by provider with similar names merged
+// GetGroupedProviders returns statistics per clean charge point operator name
 func (h *Handler) GetGroupedProviders(c *gin.Context) {
 	// Get the user's session
 	sessionID, err := c.Cookie("session_id")
@@ -592,7 +587,6 @@ func (h *Handler) GetGroupedProviders(c *gin.Context) {
 		"grouped_successful_providers": groupedProviders["grouped_successful_providers"],
 		"grouped_failed_providers":     groupedProviders["grouped_failed_providers"],
 		"all_providers":                groupedProviders["all_providers"],
-		"unknown_providers_debug":      groupedProviders["unknown_providers_debug"],
 	}
 
 	c.JSON(http.StatusOK, response)

@@ -65,6 +65,10 @@ type Session struct {
 	ChargingBlocks      []ChargingBlock `json:"charging_blocks"`       // per-block power curve
 	ErrorHints          []string        `json:"error_hints"`           // reported charging-fault hints
 	Failed              bool            `json:"failed"`                // did not keep charging (SoC gain < threshold)
+
+	// ProviderAmbiguous is set when the charge point matches named more than
+	// one operator equally often and the location did not decide. Internal only.
+	ProviderAmbiguous bool `json:"-"`
 }
 
 // RawSession is the raw BMW CarData format
@@ -130,6 +134,7 @@ func (m *Manager) LoadJSON(r io.Reader) error {
 // ProcessRawSessions processes raw BMW CarData sessions
 func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 	sessions := make([]Session, 0, len(rawSessions))
+	votes := make([]providerVote, 0, len(rawSessions))
 	// We'll track this through the IsUsingEstimatedValues() method now
 
 	for _, raw := range rawSessions {
@@ -220,9 +225,15 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 		// a transient hint but keep charging.
 		failed := (socEnd - socStart) < minContinuedSocChange
 
-		provider := "Unknown"
-		if len(raw.PublicChargingPoint.PotentialChargingPointMatches) > 0 {
-			provider = raw.PublicChargingPoint.PotentialChargingPointMatches[0].ProviderName
+		matchNames := make([]string, 0, len(raw.PublicChargingPoint.PotentialChargingPointMatches))
+		for _, match := range raw.PublicChargingPoint.PotentialChargingPointMatches {
+			matchNames = append(matchNames, match.ProviderName)
+		}
+		vote := voteProvider(matchNames)
+		votes = append(votes, vote)
+		provider := UnknownProvider
+		if vote.winner != "" {
+			provider = vote.winner
 		}
 
 		session := Session{
@@ -258,6 +269,8 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 		// Note: Each session already tracks if it's using estimated energy values
 		// via the UsingEstimatedEnergy field, which is used by IsUsingEstimatedValues()
 	}
+
+	resolveProviderTies(sessions, votes)
 
 	m.sessions = sessions
 	return nil
