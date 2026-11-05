@@ -4,26 +4,29 @@ import "testing"
 
 func TestCleanProviderNameRealNames(t *testing.T) {
 	cases := map[string]string{
-		"HPC IONITY":                               "IONITY",
-		"HPC/DC IONITY":                            "IONITY",
-		"HPC/DC IONITY GmbH":                       "IONITY",
-		"HPC/DC/AC IONITY GmbH":                    "IONITY",
-		"HPC/DC/AC EnBW mobility+":                 "EnBW",
-		"HPC/AC EnBW mobility+":                    "EnBW",
-		"HPC EnBW mobility+":                       "EnBW",
-		"DC EnBW Energie Baden-Württemberg AG":     "EnBW",
-		"HPC Tesla Supercharger":                   "Tesla",
-		"HPC/DC Tesla Supercharger":                "Tesla",
-		"HPC Aral pulse":                           "Aral pulse",
-		"HPC EWE Go GmbH":                          "EWE Go",
-		"AC Vaylens GmbH":                          "Vaylens",
-		"AC reev":                                  "reev",
-		"DC/AC Kaufland Stiftung GmbH und Co. KG":  "Kaufland",
-		"DC/AC Lidl Dienstleistung GmbH & Co. KG":  "Lidl",
-		"AC Albwerk GmbH & Co. KG":                 "Albwerk",
-		"HPC SMATRICS GmbH & Co KG":                "SMATRICS",
-		"AC Stadtwerke München GmbH":               "Stadtwerke München",
-		"AC Stadtwerke Nürtingen GmbH":             "Stadtwerke Nürtingen",
+		"HPC IONITY":                                   "IONITY",
+		"HPC/DC IONITY":                                "IONITY",
+		"HPC/DC IONITY GmbH":                           "IONITY",
+		"HPC/DC/AC IONITY GmbH":                        "IONITY",
+		"HPC/DC/AC EnBW mobility+":                     "EnBW",
+		"HPC/AC EnBW mobility+":                        "EnBW",
+		"HPC EnBW mobility+":                           "EnBW",
+		"DC EnBW Energie Baden-Württemberg AG":         "EnBW",
+		"HPC Tesla Supercharger":                       "Tesla",
+		"HPC/DC Tesla Supercharger":                    "Tesla",
+		"HPC Aral pulse":                               "Aral pulse",
+		"HPC EWE Go GmbH":                              "EWE Go",
+		"AC Vaylens GmbH":                              "Vaylens",
+		"AC reev":                                      "reev",
+		"DC/AC Kaufland Stiftung GmbH und Co. KG":      "Kaufland",
+		"DC/AC Lidl Dienstleistung GmbH & Co. KG":      "Lidl",
+		"AC Albwerk GmbH & Co. KG":                     "Albwerk",
+		"HPC SMATRICS GmbH & Co KG":                    "SMATRICS",
+		"AC Stadtwerke München GmbH":                   "Stadtwerke München",
+		"AC Stadtwerke Nürtingen GmbH":                 "Stadtwerke Nürtingen",
+		"Stadtwerke Saalfeld GmbH -SWS":                "Stadtwerke Saalfeld",
+		"SWK Stadtwerke Kaiserslautern Versorgungs-AG": "SWK Stadtwerke Kaiserslautern",
+		"Stadtwerke - Altmärkische Gas-, Wasser- und Elektrizitätswerke GmbH Stendal": "Stadtwerke Stendal",
 		"HPC Mer Germany GmbH":                     "Mer",
 		"HPC Mer Austria":                          "Mer",
 		"HPC/DC E.ON Drive Infrastructure GmbH":    "E.ON",
@@ -132,15 +135,11 @@ func TestProcessRawSessionsProviderVoteAndLocationTieBreak(t *testing.T) {
 
 func TestGroupProvidersShowsOnlyCleanOperators(t *testing.T) {
 	m := NewManager()
-	sessions := []Session{
+	m.SetSessions([]Session{
 		{Provider: "HPC IONITY"}, {Provider: "IONITY"}, {Provider: "HPC/DC IONITY GmbH", Failed: true},
 		{Provider: "Unknown"}, {Provider: ""}, {Provider: "Hauptstraße 12"},
 		{Provider: "AC Stadtwerke München GmbH"},
-	}
-	for i := range sessions {
-		sessions[i].EnergyFromGrid = 10
-	}
-	m.SetSessions(sessions)
+	})
 	res := m.GroupProviders()
 	all := res["all_providers"].([]ProviderStats)
 	if len(all) != 2 {

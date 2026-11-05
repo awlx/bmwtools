@@ -592,8 +592,8 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 // GetProviderStats returns statistics per charge point operator. Stored
 // provider names are cleaned at read time, so old raw names ("HPC/DC IONITY
 // GmbH") and new clean names ("IONITY") fall into one group. Sessions without a
-// known operator are left out, and so are plug-ins without a charge (no
-// energy and no SoC gain; see data.IsPlugInOnly).
+// known operator are left out. A session with no energy and no SoC gain is a
+// failed start and counts as failed. Averages use successful sessions only.
 func (m *Manager) GetProviderStats() ([]map[string]interface{}, error) {
 	rows, err := m.db.Query(`
 		SELECT
@@ -605,7 +605,6 @@ func (m *Manager) GetProviderStats() ([]map[string]interface{}, error) {
 			SUM(CASE WHEN status = 'successful' THEN energy_added_hvb ELSE 0 END),
 			SUM(CASE WHEN status = 'successful' THEN avg_power ELSE 0 END)
 		FROM sessions
-		WHERE NOT (energy_from_grid <= 0 AND soc_end <= soc_start)
 		GROUP BY provider
 	`)
 	if err != nil {

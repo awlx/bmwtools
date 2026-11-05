@@ -18,6 +18,7 @@ A Go-based reimplementation of the BMW CarData dashboard for improved performanc
 - If two providers have the same count, the app uses the provider that wins most often at the same place in the same upload. If this does not decide, the app uses the first match.
 - The app removes the charge point type ("HPC", "DC", "AC"), legal forms ("GmbH", "AG", "B.V." and more) and extra spaces. Known names of one operator become one name (for example "HPC/DC IONITY GmbH" becomes "IONITY").
 - Provider lists show only operator names. Sessions without a known operator do not show in provider lists. They stay in the session totals.
+- A session with no energy and no SoC gain is a failed start. It counts as failed for the provider. Efficiency, power and energy averages use successful sessions only.
 - Stored fleet data is cleaned when it is read. No database change is necessary.
 
 ## Architecture

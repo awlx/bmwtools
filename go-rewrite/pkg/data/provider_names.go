@@ -34,6 +34,10 @@ var (
 		`e\.\s?v\.?`, `ood`, `nyrt`, `cpo`,
 	}, "|") + `)$`)
 
+	// A legal form inside the name: "Stadtwerke Saalfeld GmbH -SWS". The
+	// name is cut before it.
+	innerLegalRe = regexp.MustCompile(`(?i)\s+(?:gmbh|mbh)(?:\s|$).*$`)
+
 	spaceRe      = regexp.MustCompile(`\s+`)
 	postalCodeRe = regexp.MustCompile(`\b\d{4,5}\b`)
 	streetRe     = regexp.MustCompile(`(?i)(straße|strasse|str\.|weg|platz|allee|gasse|road|street|rue|via)\s*\d`)
@@ -109,6 +113,8 @@ var providerAliases = []struct{ prefix, name string }{
 	{"iberdrola", "Iberdrola"},
 	{"move mobility", "MOVE Mobility"}, {"groupe e / move mobility", "MOVE Mobility"},
 	{"da emobil", "da emobil"},
+	{"swk stadtwerke kaiserslautern", "SWK Stadtwerke Kaiserslautern"},
+	{"stadtwerke - altmärkische", "Stadtwerke Stendal"},
 }
 
 // CleanProviderName returns the display name of the charge point operator, or
@@ -121,6 +127,9 @@ func CleanProviderName(raw string) string {
 		return ""
 	}
 	name = chargeTypePrefixRe.ReplaceAllString(name, "")
+	if cut := strings.TrimSpace(innerLegalRe.ReplaceAllString(name, "")); letterCount(cut) >= 2 {
+		name = cut
+	}
 	for {
 		next := tagSuffixRe.ReplaceAllString(name, "")
 		next = chargeTypeSuffixRe.ReplaceAllString(next, "")

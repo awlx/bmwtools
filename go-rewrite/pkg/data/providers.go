@@ -21,7 +21,7 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 	groups := make(map[string]*ProviderStats)
 	for _, session := range m.sessions {
 		name := CleanProviderName(session.Provider)
-		if name == "" || IsPlugInOnly(session) {
+		if name == "" {
 			continue
 		}
 		key := ProviderKey(name)
@@ -73,11 +73,4 @@ func (m *Manager) GroupProviders() map[string]interface{} {
 		"grouped_failed_providers":     top(func(p ProviderStats) int { return p.FailedCount }),
 		"all_providers":                allProviders,
 	}
-}
-
-// IsPlugInOnly reports a plug-in without a charge: no energy from the grid
-// and no SoC gain (for example a full battery or a timer). These sessions say
-// nothing about the charge point, so provider statistics leave them out.
-func IsPlugInOnly(s Session) bool {
-	return s.EnergyFromGrid <= 0 && s.SocEnd <= s.SocStart
 }
