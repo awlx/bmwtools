@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"sort"
 	"strings"
@@ -117,8 +118,8 @@ type CohortTrendPoint struct {
 	Value  float64 `json:"value"`
 	P25    float64 `json:"p25"`
 	P75    float64 `json:"p75"`
-	// Vehicles is the number of cars that link this step to the previous
-	// step (for the start bin: the cars in the bin). BinVehicles is the number
+	// Vehicles is the number of cars in the bin that also have data in
+	// another bin (they link the bin to the line). BinVehicles is the number
 	// of cars in the bin.
 	Vehicles    int `json:"vehicles"`
 	BinVehicles int `json:"bin_vehicles"`
@@ -653,8 +654,8 @@ func valuesOf(m map[int64]float64) []float64 {
 }
 
 // buildCohortTrends bins points per cohort. Each car is first averaged inside a
-// bin (weighted by SoC change). The line is chain-linked (see chainTrend), so
-// cars that join or leave do not move it. P25/P75 are the spread across cars
+// bin (weighted by SoC change). The line is a fixed-effects fit (see
+// fixedEffectsTrend), so cars that join or leave do not move it. P25/P75 are the spread across cars
 // in the bin.
 func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 	bins := map[trendKey]*trendBin{}
@@ -722,7 +723,7 @@ func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 	trends := []CohortTrendPoint{}
 	for sk, bs := range grouped {
 		sort.Slice(bs, func(i, j int) bool { return bs[i].idx < bs[j].idx })
-		trends = append(trends, chainTrend(sk, bs)...)
+		trends = append(trends, fixedEffectsTrend(sk, bs)...)
 	}
 	sort.Slice(trends, func(i, j int) bool {
 		a, c := trends[i], trends[j]
@@ -743,68 +744,139 @@ func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 	return trends
 }
 
-// chainTrend builds one chain-linked trend line from bins sorted by idx.
-//
-// The line starts at the start bin: the 100 % anchor for "pct", else the first
-// bin with minVehiclesForTrend cars (value: median across cars). Each next
-// step adds the median change of the cars that are in both this bin and the
-// previous bin. A car without a value in the previous bin does not count for
-// that step. The line is reliable until a step has fewer than
-// minVehiclesForTrend linked cars; all later steps are not reliable. Bins
-// before the start bin show their median across cars and are not reliable.
-func chainTrend(sk trendSeriesKey, bs []*trendBin) []CohortTrendPoint {
-	point := func(b *trendBin, value float64, linked int, reliable bool) CohortTrendPoint {
-		all := valuesOf(b.values())
-		return CohortTrendPoint{
-			Cohort: sk.cohort, Metric: sk.metric, Axis: sk.axis,
-			X: b.x, Month: b.month,
-			Value: value, P25: quantile(all, 0.25), P75: quantile(all, 0.75),
-			Vehicles: linked, BinVehicles: len(b.vehicles), Points: b.points,
-			Reliable: reliable,
+const (
+	// Limits of the fixed-effects fit (backfitting).
+	feMaxIterations = 200
+	feTolerance     = 1e-6
+)
+
+// feCell is the average of one car in one bin.
+type feCell struct {
+	car  int64
+	bin  int
+	y, w float64
+}
+
+// fitFixedEffects fits y[car,bin] = offset[car] + effect[bin] with weighted
+// least squares by backfitting (alternating weighted means). effect[ref] is 0.
+// Bins without cells keep effect 0.
+func fitFixedEffects(nBins, ref int, cells []feCell) (effects []float64, iterations int, converged bool) {
+	effects = make([]float64, nBins)
+	offsets := map[int64]float64{}
+	for iterations = 1; iterations <= feMaxIterations; iterations++ {
+		carSum := map[int64][2]float64{}
+		for _, c := range cells {
+			s := carSum[c.car]
+			s[0] += c.w * (c.y - effects[c.bin])
+			s[1] += c.w
+			carSum[c.car] = s
 		}
-	}
-	start := 0
-	if !(sk.metric == "pct" && bs[0].idx == -1) {
-		for i, b := range bs {
-			if len(b.vehicles) >= minVehiclesForTrend {
-				start = i
-				break
+		for car, s := range carSum {
+			offsets[car] = s[0] / s[1]
+		}
+		binSum := make([][2]float64, nBins)
+		for _, c := range cells {
+			binSum[c.bin][0] += c.w * (c.y - offsets[c.car])
+			binSum[c.bin][1] += c.w
+		}
+		next := make([]float64, nBins)
+		for b, s := range binSum {
+			if s[1] > 0 {
+				next[b] = s[0] / s[1]
 			}
 		}
+		shift := next[ref]
+		maxDelta := 0.0
+		for b := range next {
+			next[b] -= shift
+			maxDelta = math.Max(maxDelta, math.Abs(next[b]-effects[b]))
+		}
+		effects = next
+		if maxDelta < feTolerance {
+			return effects, iterations, true
+		}
+	}
+	return effects, feMaxIterations, false
+}
+
+// fixedEffectsTrend builds one trend line from bins sorted by idx.
+//
+// It fits value[car,bin] = carOffset + binEffect over all car-bin averages, so
+// cars that join or leave do not move the line, and the noise of one bin does
+// not add up. The line is start + binEffect, where start is the median of the
+// car values in the first reliable bin and that bin has effect 0. A bin is
+// reliable when minVehiclesForTrend of its cars also have data in another bin.
+// The % line also shows the 100 % start point at x = 0 (the baseline window,
+// which is not in the fit).
+func fixedEffectsTrend(sk trendSeriesKey, bs []*trendBin) []CohortTrendPoint {
+	var out []CohortTrendPoint
+	if len(bs) > 0 && bs[0].idx == -1 {
+		anchor := bs[0]
+		bs = bs[1:]
+		if n := len(anchor.vehicles); n >= minVehiclesPerBin {
+			out = append(out, CohortTrendPoint{
+				Cohort: sk.cohort, Metric: sk.metric, Axis: sk.axis,
+				Value: 100, P25: 100, P75: 100,
+				Vehicles: n, BinVehicles: n, Reliable: n >= minVehiclesForTrend,
+			})
+		}
+	}
+	if len(bs) == 0 {
+		return out
 	}
 
-	var out []CohortTrendPoint
-	for _, b := range bs[:start] {
-		if len(b.vehicles) >= minVehiclesPerBin {
-			out = append(out, point(b, median(valuesOf(b.values())), len(b.vehicles), false))
+	binsOfCar := map[int64]int{}
+	var cells []feCell
+	values := make([]map[int64]float64, len(bs))
+	for i, b := range bs {
+		values[i] = b.values()
+		for id, acc := range b.vehicles {
+			binsOfCar[id]++
+			cells = append(cells, feCell{car: id, bin: i, y: acc[0] / acc[1], w: acc[1]})
 		}
 	}
-	prev := bs[start].values()
-	value := median(valuesOf(prev))
-	reliable := len(prev) >= minVehiclesForTrend
-	if len(prev) >= minVehiclesPerBin {
-		out = append(out, point(bs[start], value, len(prev), reliable))
-	}
-	for _, b := range bs[start+1:] {
-		cur := b.values()
-		var diffs []float64
-		for id, c := range cur {
-			if p, ok := prev[id]; ok {
-				diffs = append(diffs, c-p)
+	linked := make([]int, len(bs))
+	for i, b := range bs {
+		for id := range b.vehicles {
+			if binsOfCar[id] > 1 {
+				linked[i]++
 			}
 		}
-		if len(diffs) == 0 {
-			// No car links this bin to the line: the line ends here.
+	}
+	ref := -1
+	for i := range bs {
+		if linked[i] >= minVehiclesForTrend {
+			ref = i
 			break
 		}
-		value += median(diffs)
-		if len(diffs) < minVehiclesForTrend {
-			reliable = false
+	}
+	if ref < 0 {
+		// No reliable bin: use the bin with the most linked cars.
+		ref = 0
+		for i := range bs {
+			if linked[i] > linked[ref] {
+				ref = i
+			}
 		}
-		prev = cur
-		if len(cur) >= minVehiclesPerBin {
-			out = append(out, point(b, value, len(diffs), reliable))
+	}
+	effects, iterations, converged := fitFixedEffects(len(bs), ref, cells)
+	if !converged {
+		log.Printf("battery trend fit: cohort %d %s/%s not converged after %d iterations", sk.cohort, sk.metric, sk.axis, iterations)
+	}
+	start := median(valuesOf(values[ref]))
+
+	for i, b := range bs {
+		if len(b.vehicles) < minVehiclesPerBin || (linked[i] == 0 && i != ref) {
+			continue
 		}
+		all := valuesOf(values[i])
+		out = append(out, CohortTrendPoint{
+			Cohort: sk.cohort, Metric: sk.metric, Axis: sk.axis,
+			X: b.x, Month: b.month,
+			Value: start + effects[i], P25: quantile(all, 0.25), P75: quantile(all, 0.75),
+			Vehicles: linked[i], BinVehicles: len(b.vehicles), Points: b.points,
+			Reliable: linked[i] >= minVehiclesForTrend,
+		})
 	}
 	return out
 }

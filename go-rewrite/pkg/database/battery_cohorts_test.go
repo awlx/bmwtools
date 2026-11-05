@@ -186,7 +186,8 @@ func TestTrendsMedianPerVehicleAndMinVehicles(t *testing.T) {
 		t.Fatalf("kwh/km trend = %+v, want 1 bin", kmTrend)
 	}
 	approx(t, "median", kmTrend[0].Value, 72, 1e-9)
-	if kmTrend[0].Vehicles != 3 || kmTrend[0].Points != 56 {
+	// Only car 3 has data in another bin (it links the bin).
+	if kmTrend[0].BinVehicles != 3 || kmTrend[0].Vehicles != 1 || kmTrend[0].Points != 56 {
 		t.Errorf("bin = %+v", kmTrend[0])
 	}
 	approx(t, "bin centre", kmTrend[0].X, 2500, 1e-9)
@@ -557,7 +558,7 @@ func kwhKmTrend(t *testing.T, res BatteryCohortResult) []CohortTrendPoint {
 	return out
 }
 
-func TestChainTrendLowCarLeavesStaysFlat(t *testing.T) {
+func TestTrendLowCarLeavesStaysFlat(t *testing.T) {
 	var pts []BatteryHealthPoint
 	// Flat cars at 74..81 kWh; the two lowest stop at ~20,000 km.
 	for i := 0; i < 8; i++ {
@@ -579,7 +580,7 @@ func TestChainTrendLowCarLeavesStaysFlat(t *testing.T) {
 	}
 }
 
-func TestChainTrendHighCarJoinsLateStaysFlat(t *testing.T) {
+func TestTrendHighCarJoinsLateStaysFlat(t *testing.T) {
 	var pts []BatteryHealthPoint
 	for i := 0; i < 7; i++ {
 		pts = append(pts, car(int64(i+1), "m", 74+float64(i), 500, 0, 40)...)
@@ -598,7 +599,7 @@ func TestChainTrendHighCarJoinsLateStaysFlat(t *testing.T) {
 	}
 }
 
-func TestChainTrendSteadyDecline(t *testing.T) {
+func TestTrendSteadyDecline(t *testing.T) {
 	var pts []BatteryHealthPoint
 	// 1 kWh per 10,000 km: 0.5 kWh per 5,000 km bin.
 	for id := int64(1); id <= 6; id++ {
@@ -616,4 +617,55 @@ func TestChainTrendSteadyDecline(t *testing.T) {
 	if pct[0].Value != 100 || pct[len(pct)-1].Value > 96 {
 		t.Errorf("pct trend = %+v", pct)
 	}
+}
+
+func TestFitFixedEffectsConverges(t *testing.T) {
+	// Unbalanced panel: each car covers a few neighbouring bins, with its own
+	// offset. True bin effects are -0.3 per bin.
+	const nBins = 20
+	var cells []feCell
+	for car := 0; car < 30; car++ {
+		first := car % 15
+		for b := first; b < first+6 && b < nBins; b++ {
+			y := 70 + float64(car)*0.4 - 0.3*float64(b)
+			cells = append(cells, feCell{car: int64(car), bin: b, y: y, w: 1 + float64(car%3)})
+		}
+	}
+	effects, iterations, converged := fitFixedEffects(nBins, 0, cells)
+	if !converged {
+		t.Fatalf("not converged after %d iterations", iterations)
+	}
+	for b, e := range effects {
+		approx(t, fmt.Sprintf("effect %d", b), e, -0.3*float64(b), 1e-4)
+	}
+
+	// The reference bin is 0 when it is not the first bin.
+	effects, _, _ = fitFixedEffects(nBins, 5, cells)
+	approx(t, "ref effect", effects[5], 0, 1e-12)
+	approx(t, "effect 0", effects[0], 1.5, 1e-4)
+}
+
+func TestTrendIgnoresSingleBinNoise(t *testing.T) {
+	// One car is 3 kWh high in one bin only. The fit keeps the later bins on
+	// the line: the jump does not carry forward.
+	var pts []BatteryHealthPoint
+	for id := int64(1); id <= 6; id++ {
+		for _, p := range car(id, "m", 80, 500, 1, 40) {
+			if id == 1 && p.Mileage >= 20000 && p.Mileage < 25000 {
+				p.Capacity += 3
+			}
+			pts = append(pts, p)
+		}
+	}
+	tr := kwhKmTrend(t, AnalyzeBatteryCohorts(pts))
+	var before, after float64
+	for _, b := range tr {
+		switch b.X {
+		case 17500:
+			before = b.Value
+		case 27500:
+			after = b.Value
+		}
+	}
+	approx(t, "two steps over the noisy bin", after-before, -1, 1e-4)
 }

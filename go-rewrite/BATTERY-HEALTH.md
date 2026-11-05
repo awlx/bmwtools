@@ -40,9 +40,9 @@ One model can have different battery sizes. The page puts each car into one batt
 
 - One chart for each battery group.
 - Each car starts at 100 % of its own start capacity. The x-axis shows the km or months since the first data of that car. Cars that join at high mileage thus show their real loss.
-- **Line (chain-linked):** the page first takes one average per car in each step (5,000 km or 6 months). From one step to the next, the line moves by the median change of the cars that are in both steps. Cars that join or leave thus do not move the line. A car without data in a step does not count for that change.
-- **Start:** the % line starts at 100 % at 0. The measurements that make the start capacity are not in the line, because they are near 100 % by definition. A kWh line starts at the median of the first step with 5 or more cars.
-- **Minimum cars:** a change needs 5 or more cars in both steps. After the first change with fewer cars, the line shows as faded dots. The hover shows the number of cars in the change.
+- **Line (fixed-effects fit):** the page first takes one average per car in each step (5,000 km or 6 months). Then it fits "car value = car level + step effect" to all these averages (least squares, weighted by SoC change). The line shows the step effects. Cars that join or leave thus do not move the line, and the noise of one step does not add up.
+- **Start:** the % line starts at 100 % at 0. The measurements that make the start capacity are not in the fit, because they are near 100 % by definition. After that, the line starts at the median of the cars in the first reliable step.
+- **Minimum cars:** a step is reliable when 5 or more of its cars also have data in a different step. Other steps show as faded dots. The hover shows the number of these cars.
 - **Seasons:** charging losses change with temperature. Estimated values are approx. 1.5 % higher in summer than in winter. A 6-month step holds warm and cold months, which makes this effect smaller.
 - **Band:** the middle 50 % of the cars in each step. The band shows the spread, not the trend.
 - **Title figure:** the median slope of the cars, e.g. "≈ −0.7 % per 10,000 km". The page fits one straight line per car (% of start capacity). Only cars with 10 or more measurements over 20,000 km or more count. The value per year also needs 12 months of data per car. The page shows the value only when 5 or more cars count. Otherwise it shows "Not enough data".
