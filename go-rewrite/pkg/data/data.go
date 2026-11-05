@@ -753,20 +753,15 @@ func (m *Manager) GetSessionStats() map[string]interface{} {
 				errorReasons[normalizeHint(h)]++
 			}
 		}
-		plugIn := IsPlugInOnly(session)
 		if session.Failed {
 			totalFailedSessions++
-			if !plugIn {
-				failedProviders[session.Provider]++
-			}
+			failedProviders[session.Provider]++
 			for _, h := range session.ErrorHints {
 				failureReasons[normalizeHint(h)]++
 			}
 		} else {
 			totalSuccessfulSessions++
-			if !plugIn {
-				successfulProviders[session.Provider]++
-			}
+			successfulProviders[session.Provider]++
 		}
 	}
 
