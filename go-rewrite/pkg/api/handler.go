@@ -9,6 +9,7 @@ import (
 
 	"github.com/awlx/bmwtools/pkg/data"
 	"github.com/awlx/bmwtools/pkg/database"
+	"github.com/awlx/bmwtools/pkg/vehicles"
 	"github.com/gin-gonic/gin"
 )
 
@@ -146,6 +147,10 @@ func (h *Handler) UploadJSON(c *gin.Context) {
 		// Validate model parameter is provided when consent is given
 		if model == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "BMW model selection is required when sharing data"})
+			return
+		}
+		if !vehicles.IsValidUploadModel(model) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown BMW model selection"})
 			return
 		}
 

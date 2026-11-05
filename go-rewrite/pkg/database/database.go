@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 
 	"github.com/awlx/bmwtools/pkg/data"
+	"github.com/awlx/bmwtools/pkg/vehicles"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -317,7 +318,7 @@ func (m *Manager) StoreSessions(sessions []data.Session, filename string, userSp
 	return true, nil
 }
 
-// GetAvailableModels returns a list of available BMW models in the database
+// GetAvailableModels returns the model families that have stored vehicles.
 func (m *Manager) GetAvailableModels() ([]string, error) {
 	// First check if the table exists
 	var tableExists int
@@ -337,18 +338,54 @@ func (m *Manager) GetAvailableModels() ([]string, error) {
 	}
 	defer rows.Close()
 
-	var models []string
+	seen := map[string]bool{}
+	models := []string{}
 	for rows.Next() {
 		var model string
 		if err := rows.Scan(&model); err != nil {
 			return nil, err
 		}
-		if model != "" {
-			models = append(models, model)
+		if family := vehicles.FamilyOf(model); family != "" && !seen[family] {
+			seen[family] = true
+			models = append(models, family)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Strings(models)
+	return models, nil
+}
 
-	return models, rows.Err()
+// familyFilter returns a WHERE clause that selects all stored model values of
+// the family of filter (pack-group values and legacy family-only values).
+func (m *Manager) familyFilter(filter string) (string, []interface{}, error) {
+	if filter == "" {
+		return "", []interface{}{}, nil
+	}
+	family := vehicles.FamilyOf(filter)
+	rows, err := m.db.Query("SELECT DISTINCT model FROM vehicles WHERE model IS NOT NULL")
+	if err != nil {
+		return "", nil, err
+	}
+	defer rows.Close()
+	var args []interface{}
+	for rows.Next() {
+		var model string
+		if err := rows.Scan(&model); err != nil {
+			return "", nil, err
+		}
+		if vehicles.FamilyOf(model) == family {
+			args = append(args, model)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", nil, err
+	}
+	if len(args) == 0 {
+		return " WHERE 1 = 0", []interface{}{}, nil
+	}
+	return " WHERE v.model IN (?" + strings.Repeat(", ?", len(args)-1) + ")", args, nil
 }
 
 // GetFleetBatteryHealth returns battery health data for the fleet
@@ -377,11 +414,11 @@ func (m *Manager) GetFleetBatteryHealth(modelFilter string) ([]map[string]interf
 		JOIN vehicles v ON bh.vehicle_id = v.id
 	`
 
-	args := []interface{}{}
-	if modelFilter != "" {
-		query += " WHERE v.model = ?"
-		args = append(args, modelFilter)
+	clause, args, err := m.familyFilter(modelFilter)
+	if err != nil {
+		return nil, err
 	}
+	query += clause
 
 	query += " ORDER BY bh.date"
 
@@ -408,7 +445,7 @@ func (m *Manager) GetFleetBatteryHealth(modelFilter string) ([]map[string]interf
 			"mileage":            mileage,
 			"soc_change":         socChange,
 			"is_raw_data":        isRawData,
-			"model":              model,
+			"model":              vehicles.FamilyOf(model),
 		})
 	}
 
@@ -444,14 +481,14 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 		JOIN vehicles v ON bh.vehicle_id = v.id
 	`
 
-	args := []interface{}{}
-	if modelFilter != "" {
-		query += " WHERE v.model = ?"
-		args = append(args, modelFilter)
+	clause, args, err := m.familyFilter(modelFilter)
+	if err != nil {
+		return nil, err
 	}
+	query += clause
 
 	// Order chronologically so the trend line is plotted in time order.
-	query += " GROUP BY strftime('%Y-%m', bh.date), v.model ORDER BY month"
+	query += " GROUP BY strftime('%Y-%m', bh.date) ORDER BY month"
 
 	rows, err := m.db.Query(query, args...)
 	if err != nil {
@@ -482,7 +519,7 @@ func (m *Manager) GetMonthlyBatteryHealthTrend(modelFilter string) ([]map[string
 			"total_soc_change":   totalSocChange,
 			"data_points":        dataPoints,
 			"mileage":            avgMileage,
-			"model":              model,
+			"model":              vehicles.FamilyOf(model),
 			"is_monthly_average": true,
 		})
 	}

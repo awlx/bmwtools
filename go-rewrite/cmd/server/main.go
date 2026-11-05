@@ -65,6 +65,7 @@ func main() {
 	r.GET("/api/version", apiHandler.GetVersion)
 	r.GET("/api/anonymous-stats", apiHandler.GetAnonymousStats)
 	r.GET("/api/battery-health", apiHandler.GetBatteryHealth)
+	r.GET("/api/vehicle-models", apiHandler.GetVehicleModels)
 
 	// Create a custom static file handler with cache control headers
 	staticHandler := func(c *gin.Context) {
