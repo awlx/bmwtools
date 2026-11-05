@@ -210,7 +210,9 @@
             <div class="battery-info-box">
                 <h3>How to read the charts</h3>
                 <p>One chart shows one battery size. Each car is compared with its own first measurements (100 %). The x-axis starts at the first data of each car.</p>
-                <p><strong>Line:</strong> median of all cars. <strong>Band:</strong> the middle 50 % of the cars. A step needs data from 2 or more cars.</p>
+                <p><strong>Line:</strong> the trend of the group. Each car is compared only with itself, so cars that join or leave do not move the line. The line starts at the first step after the start measurements of each car.</p>
+                <p><strong>Solid line:</strong> 8 or more cars. <strong>Faded line:</strong> 2 to 7 cars. Read the faded part with care. Point at the line to see the number of cars.</p>
+                <p><strong>Band:</strong> the middle 50 % of the cars.</p>
                 <p><strong>Left axis:</strong> capacity in kWh for the median start capacity of the group. <strong>Right axis:</strong> % of start capacity.</p>
             </div>
 
@@ -219,7 +221,7 @@
             <div class="chart-info">
                 <p id="battery-sparse-note"></p>
                 <p id="battery-excluded-note"></p>
-                <p><strong>Note:</strong> Battery capacity is estimated from charging sessions where a significant charge was added (>20% SOC change). Cars with fewer than 3 measurements are not in the charts.</p>
+                <p><strong>Note:</strong> The capacity is estimated from charging sessions. The charts use only charges of 40 % SoC or more. Cars with fewer than 3 measurements are not in the charts.</p>
             </div>
         </section>
 
