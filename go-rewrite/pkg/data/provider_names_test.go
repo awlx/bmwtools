@@ -132,11 +132,15 @@ func TestProcessRawSessionsProviderVoteAndLocationTieBreak(t *testing.T) {
 
 func TestGroupProvidersShowsOnlyCleanOperators(t *testing.T) {
 	m := NewManager()
-	m.SetSessions([]Session{
+	sessions := []Session{
 		{Provider: "HPC IONITY"}, {Provider: "IONITY"}, {Provider: "HPC/DC IONITY GmbH", Failed: true},
 		{Provider: "Unknown"}, {Provider: ""}, {Provider: "Hauptstraße 12"},
 		{Provider: "AC Stadtwerke München GmbH"},
-	})
+	}
+	for i := range sessions {
+		sessions[i].EnergyFromGrid = 10
+	}
+	m.SetSessions(sessions)
 	res := m.GroupProviders()
 	all := res["all_providers"].([]ProviderStats)
 	if len(all) != 2 {

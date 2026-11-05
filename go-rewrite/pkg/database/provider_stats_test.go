@@ -50,3 +50,39 @@ func TestGetProviderStatsMergesStoredRawNames(t *testing.T) {
 		t.Errorf("totals: got %d sessions, want %d (unknown operators still count)", total, len(sessions))
 	}
 }
+
+func TestProviderStatsLeaveOutPlugIns(t *testing.T) {
+	m, err := New(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	mk := func(i int, energy, socEnd float64) data.Session {
+		return data.Session{
+			ID: fmt.Sprint(i), StartTime: base.Add(time.Duration(i) * time.Hour), EndTime: base.Add(time.Duration(i)*time.Hour + time.Minute),
+			SocStart: 50, SocEnd: socEnd, EnergyFromGrid: energy, Provider: "IONITY", Failed: socEnd-50 < 1,
+		}
+	}
+	sessions := []data.Session{mk(1, 40, 90), mk(2, 0, 50), mk(3, 0, 50), mk(4, 0.4, 50)}
+	if _, err := m.StoreSessions(sessions, "BMW-CarData-Ladehistorie_WBA00000000000001_2025.json", "BMW i4"); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := m.GetProviderStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two plug-ins without energy and SoC gain are left out. The session with
+	// energy but no SoC gain is a real failure and stays.
+	if len(stats) != 1 || stats[0]["total_sessions"] != 2 || stats[0]["failed_sessions"] != 1 {
+		t.Fatalf("stats = %v", stats)
+	}
+
+	dm := data.NewManager()
+	dm.SetSessions(sessions)
+	g := dm.GroupProviders()["all_providers"].([]data.ProviderStats)
+	if len(g) != 1 || g[0].Total != 2 || g[0].FailedCount != 1 {
+		t.Fatalf("grouped = %+v", g)
+	}
+}
