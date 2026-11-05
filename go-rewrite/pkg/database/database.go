@@ -121,18 +121,30 @@ func (m *Manager) initSchema() error {
 // land on the same vehicle row and duplicate sessions are skipped, while
 // genuinely new sessions are appended.
 func (m *Manager) StoreSessions(sessions []data.Session, filename string, userSpecifiedModel string) (bool, error) {
-	// Generate a hash of the content to detect duplicate uploads.
-	contentHash := hashSessions(sessions)
+	return m.StoreSessionsForVehicle(sessions, VehicleHash(filename, sessions), userSpecifiedModel)
+}
 
-	// Derive a stable, privacy-preserving identity for the vehicle this upload
-	// belongs to. The VIN in the filename gives us a single id per car; if it is
-	// missing we fall back to the file content hash so the upload still maps to
-	// exactly one vehicle rather than one-per-session.
+// VehicleHash returns the salted one-way hash that identifies the car of an
+// upload. The VIN in the filename gives a single id per car; if it is missing
+// the file content hash is used, so the upload still maps to exactly one
+// vehicle rather than one per session. The VIN itself is never kept.
+func VehicleHash(filename string, sessions []data.Session) string {
 	vehicleKey := vehicleKeyFromFilename(filename)
 	if vehicleKey == "" {
-		vehicleKey = "content:" + contentHash
+		vehicleKey = "content:" + hashSessions(sessions)
 	}
-	finHash := hashFIN(vehicleKey)
+	return hashFIN(vehicleKey)
+}
+
+// StoreSessionsForVehicle stores sessions for the car with the given
+// VehicleHash. Sessions that are already stored for this car are skipped, so
+// calling it again with the same data stores nothing and returns false.
+func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash string, userSpecifiedModel string) (bool, error) {
+	if len(finHash) < 16 {
+		return false, fmt.Errorf("invalid vehicle hash")
+	}
+	// Generate a hash of the content to detect duplicate uploads.
+	contentHash := hashSessions(sessions)
 	finPrefix := finHash[:16]
 
 	// Build the vehicle-scoped session ids so two different cars can share the

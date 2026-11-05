@@ -56,6 +56,8 @@ func main() {
 	// Set up routes
 	// API routes
 	r.POST("/api/upload", apiHandler.UploadJSON)
+	r.POST("/api/contribute", apiHandler.Contribute)
+	r.GET("/api/contribute", apiHandler.GetContributeStatus)
 	r.GET("/api/demo", apiHandler.LoadDemoData)
 	r.GET("/api/sessions", apiHandler.GetSessions)
 	r.GET("/api/stats", apiHandler.GetStats)
