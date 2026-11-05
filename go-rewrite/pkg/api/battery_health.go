@@ -4,8 +4,15 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/awlx/bmwtools/pkg/vehicles"
 	"github.com/gin-gonic/gin"
 )
+
+// GetVehicleModels returns the model families and battery-size groups offered
+// at upload time.
+func (h *Handler) GetVehicleModels(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"families": vehicles.Catalog()})
+}
 
 // GetBatteryHealth returns battery health data for the entire fleet or filtered by model
 func (h *Handler) GetBatteryHealth(c *gin.Context) {
@@ -56,6 +63,12 @@ func (h *Handler) GetBatteryHealth(c *gin.Context) {
 		availableModels = []string{}
 	}
 
+	// Pack-variant cohorts with per-car relative degradation.
+	cohorts, err := h.dbManager.GetBatteryCohorts(model)
+	if err != nil {
+		fmt.Printf("Error getting battery cohorts: %v\n", err)
+	}
+
 	// Merge raw data and trend data
 	allData := append(rawData, trendData...)
 
@@ -64,5 +77,9 @@ func (h *Handler) GetBatteryHealth(c *gin.Context) {
 		"battery_health_data": allData,
 		"available_models":    availableModels,
 		"model_filter":        model,
+		"cohorts":             cohorts.Cohorts,
+		"cohort_points":       cohorts.Points,
+		"cohort_trends":       cohorts.Trends,
+		"excluded_vehicles":   cohorts.Excluded,
 	})
 }

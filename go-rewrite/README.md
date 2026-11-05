@@ -105,10 +105,13 @@ The application will be available at http://localhost:8050
 2. Visit the dashboard in your web browser
 3. Upload your BMW-CarData-Ladehistorie_*.json file
 4. Explore your charging data through the interactive dashboard
+5. Optional: share your data with the fleet statistics. You can do this at upload, or later with the "Share my data with the fleet" panel. Demo data cannot be shared.
 
 ## API Endpoints
 
 - `POST /api/upload` - Upload JSON file
+- `GET /api/contribute` - Tell if the loaded data can be shared with the fleet
+- `POST /api/contribute` - Share the loaded data with the fleet (`consent=true`, `model`). Data that is already stored is not stored again.
 - `GET /api/demo` - Load demo data
 - `GET /api/sessions` - Get all charging sessions
 - `GET /api/session/:id` - Get details for a specific session
@@ -125,10 +128,45 @@ The Go implementation offers several advantages over the original Python version
 - **Deployment**: Single binary deployment
 - **Security**: Strong type system and memory safety
 
+## Configuration
+
+| Variable | Default | Use |
+|---|---|---|
+| `PORT` | `8050` | HTTP port. |
+| `BMWTOOLS_VIN_SALT` | built-in value | Salt for the one-way VIN hash. Set your own secret for a new database. Do not change it for an existing database: the hashes then do not match and re-uploads create new vehicles. |
+
+## Fleet data identity
+
+- The server never stores the VIN. It stores a salted hash of the VIN from the upload filename.
+- If the filename has no VIN, the server uses a hash of the file content.
+- Before the server creates a vehicle, it compares the upload with stored sessions (start time, SoC start, SoC end, energy). If at least 30% or 20 sessions match one vehicle, the upload joins that vehicle. The server keeps the new hash as an alias.
+- Two vehicles with different VIN hashes are never joined.
+- The server skips sessions that are already stored, by id or by the same values.
+- A later upload can make the model more specific (for example `BMW i4` to an i4 battery group). A change to a different model needs a battery capacity that fits that model.
+- The server ignores records without a start time. A file with no valid CarData sessions gives an error.
+
 ## Database Migration
 
 If you're upgrading from a previous version, you may need to migrate your database schema.
 See [MIGRATION.md](MIGRATION.md) for instructions on updating your database.
+
+### Fleet repair (one-off)
+
+The repair command fixes old fleet data:
+
+- It merges duplicate vehicles (same sessions) and removes duplicate sessions and battery points.
+- It deletes records with a start time of 1970.
+- It fixes 1970 end times from the session duration, or clears them.
+- It splits a vehicle that holds two cars (odometer drop of more than 1,000 km). Vehicles with a VIN hash are not split.
+
+```bash
+# Dry run on a temporary copy. The database does not change.
+go run ./migrations/repair_fleet -db ./data/bmwtools.db
+# Repair. The command writes a backup next to the database first.
+go run ./migrations/repair_fleet -db ./data/bmwtools.db -apply
+```
+
+Stop the server before you use `-apply`.
 
 ## Disclaimer
 

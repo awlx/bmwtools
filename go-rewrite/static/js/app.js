@@ -152,6 +152,14 @@ function setupEventListeners() {
             modelSelector.style.display = this.checked ? 'block' : 'none';
         });
     }
+
+    loadVehicleModelOptions();
+
+    const shareButton = document.getElementById('share-button');
+    if (shareButton) {
+        shareButton.addEventListener('click', contributeData);
+    }
+    refreshSharePanel();
     
     // Set up drag and drop events for the upload container
     const uploadContainer = document.querySelector('.upload-container');
@@ -276,6 +284,7 @@ async function uploadFile(file) {
         }
 
         await loadSessionData();
+        await refreshSharePanel();
     } catch (error) {
         console.error('Upload error:', error);
         alert(`Error: ${error.message}`);
@@ -292,6 +301,7 @@ async function loadDemoData() {
         }
 
         await loadSessionData();
+        await refreshSharePanel();
     } catch (error) {
         console.error('Demo data error:', error);
         alert(`Error: ${error.message}`);
@@ -2431,12 +2441,18 @@ function getMarkerHexColor(colorName) {
     return colorMap[colorName] || '#3388ff'; // Default to Leaflet blue
 }
 
+// sessionEndDate returns the session end, or the start when the export has no
+// end time.
+function sessionEndDate(s) {
+    return s.end_time ? new Date(s.end_time) : new Date(s.start_time);
+}
+
 // Create charge details graph
 function createChargeDetailsGraph() {
     if (!currentSession) return;
 
     const data = [{
-        x: [new Date(currentSession.start_time), new Date(currentSession.end_time)],
+        x: [new Date(currentSession.start_time), sessionEndDate(currentSession)],
         y: [currentSession.soc_start, currentSession.soc_end],
         mode: 'lines+markers',
         type: 'scatter',
@@ -2678,13 +2694,13 @@ function createCombinedGauges() {
         
         // Format date and time
         const startDate = new Date(currentSession.start_time);
-        const endDate = new Date(currentSession.end_time);
+        const endDate = currentSession.end_time ? new Date(currentSession.end_time) : null;
         const dateOptions = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
         const timeOptions = { hour: '2-digit', minute: '2-digit' };
         
         const formattedDate = startDate.toLocaleDateString(undefined, dateOptions);
         const formattedStartTime = startDate.toLocaleTimeString(undefined, timeOptions);
-        const formattedEndTime = endDate.toLocaleTimeString(undefined, timeOptions);
+        const formattedEndTime = endDate ? endDate.toLocaleTimeString(undefined, timeOptions) : '?';
         
         // Create info items
         const infoItems = [
@@ -2862,7 +2878,7 @@ function createGridPowerGraph() {
     
     // Calculate time points for x-axis
     const startTime = new Date(currentSession.start_time).getTime();
-    const endTime = new Date(currentSession.end_time).getTime();
+    const endTime = sessionEndDate(currentSession).getTime();
     const timeRange = endTime - startTime;
     const timePoints = currentSession.grid_power_start.map((_, i) => 
         new Date(startTime + (i * timeRange / currentSession.grid_power_start.length))
@@ -2961,6 +2977,109 @@ function createRangeMap() {
     L.circleMarker([currentSession.latitude, currentSession.longitude], markerOptions)
         .addTo(rangeMap)
         .bindPopup(`${currentSession.location}<br>${sessionStatus}<br>Energy Added: ${currentSession.energy_added_hvb.toFixed(2)} kWh`);
+}
+
+// Replace the static model list with battery-size groups from the server.
+// Each family is an <optgroup>; each option is one battery size, with all
+// trims that share that pack. The static list stays if the request fails.
+async function loadVehicleModelOptions() {
+    try {
+        const response = await fetch('/api/vehicle-models');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data.families || data.families.length === 0) return;
+        ['bmw-model', 'share-model'].forEach(id => {
+            const select = document.getElementById(id);
+            if (select) fillVehicleModelSelect(select, data.families);
+        });
+    } catch (error) {
+        console.error('Error loading vehicle models:', error);
+    }
+}
+
+function fillVehicleModelSelect(select, families) {
+    const current = select.value;
+    select.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Please select a model and battery (required)';
+    select.appendChild(placeholder);
+
+    families.forEach(family => {
+        const groups = family.groups || [];
+        if (groups.length === 0) {
+            const option = document.createElement('option');
+            option.value = family.name;
+            option.textContent = family.name;
+            select.appendChild(option);
+            return;
+        }
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = family.name;
+        groups.forEach(g => {
+            const option = document.createElement('option');
+            option.value = g.value;
+            option.textContent = g.generation ? `${g.label} – ${g.generation}` : g.label;
+            optgroup.appendChild(option);
+        });
+        select.appendChild(optgroup);
+    });
+    if (Array.from(select.options).some(o => o.value === current)) {
+        select.value = current;
+    }
+}
+
+// Shows the "Share my data" panel when the loaded data can still be shared.
+// Demo data and data that is already shared never show it.
+async function refreshSharePanel() {
+    const panel = document.getElementById('share-panel');
+    if (!panel) return;
+    try {
+        const response = await fetch('/api/contribute');
+        const status = response.ok ? await response.json() : {};
+        panel.hidden = !status.can_contribute;
+        const uploadModel = document.getElementById('bmw-model');
+        const shareModel = document.getElementById('share-model');
+        if (status.can_contribute && uploadModel && shareModel && uploadModel.value && !shareModel.value) {
+            shareModel.value = uploadModel.value;
+        }
+    } catch (error) {
+        panel.hidden = true;
+    }
+}
+
+// Stores the data that is already loaded in this session in the fleet data.
+async function contributeData() {
+    const consent = document.getElementById('share-consent');
+    const model = document.getElementById('share-model');
+    if (!consent || !consent.checked) {
+        alert('Please give your consent to share your data.');
+        return;
+    }
+    if (!model || !model.value) {
+        alert('Please select your BMW model and battery.');
+        return;
+    }
+    const button = document.getElementById('share-button');
+    button.disabled = true;
+    try {
+        const body = new URLSearchParams({ consent: 'true', model: model.value });
+        const response = await fetch('/api/contribute', { method: 'POST', body });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || 'Error sharing data');
+        }
+        let message = result.message;
+        if (result.stored_count) {
+            message += `\n\nTotal sessions in database: ${result.stored_count}.`;
+        }
+        alert(message);
+        await refreshSharePanel();
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    } finally {
+        button.disabled = false;
+    }
 }
 
 // Initialize the application

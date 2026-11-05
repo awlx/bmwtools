@@ -9,11 +9,15 @@ import (
 
 	"github.com/awlx/bmwtools/pkg/data"
 	"github.com/awlx/bmwtools/pkg/database"
+	"github.com/awlx/bmwtools/pkg/vehicles"
 	"github.com/gin-gonic/gin"
 )
 
 // AppVersion is the current version of the application
 const AppVersion = "1.0.1"
+
+// demoDataFile is the demo data set. Demo data is never stored in the fleet data.
+var demoDataFile = "FINAL_DEMO_CHARGING_DATA_SMOOTH_CURVES.JSON"
 
 // Handler handles API requests
 type Handler struct {
@@ -126,10 +130,11 @@ func (h *Handler) UploadJSON(c *gin.Context) {
 
 	// Get the processed sessions
 	sessions := session.DataManager.GetSessions()
+	vehicleHash := database.VehicleKeyFor(fileHeader.Filename, sessions)
+	session.setUpload(vehicleHash, false)
 
 	// Check for consent to store in fleet statistics database
-	consentParam := c.PostForm("consent")
-	hasConsent := consentParam == "true" || consentParam == "1" || consentParam == "yes"
+	hasConsent := isConsent(c.PostForm("consent"))
 
 	// Get the BMW model if provided
 	model := c.PostForm("model")
@@ -143,13 +148,18 @@ func (h *Handler) UploadJSON(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "BMW model selection is required when sharing data"})
 			return
 		}
+		if !vehicles.IsValidUploadModel(model) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown BMW model selection"})
+			return
+		}
 
 		var err error
-		isNew, err = h.dbManager.StoreSessions(sessions, fileHeader.Filename, model)
+		isNew, err = h.dbManager.StoreSessionsForVehicle(sessions, vehicleHash, model)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error storing sessions in database: %v", err)})
 			return
 		}
+		session.markShared(vehicleHash)
 
 		// Query the database to get an accurate count of stored sessions
 		// This ensures that the count shown in the UI matches what's actually in the database
@@ -186,10 +196,107 @@ func (h *Handler) UploadJSON(c *gin.Context) {
 	})
 }
 
+func isConsent(v string) bool {
+	return v == "true" || v == "1" || v == "yes"
+}
+
+// currentSession returns the caller's own session, or nil.
+func (h *Handler) currentSession(c *gin.Context) *SessionData {
+	sessionID, err := c.Cookie("session_id")
+	if err != nil || sessionID == "" {
+		return nil
+	}
+	session, ok := h.sessions.GetSession(sessionID)
+	if !ok {
+		return nil
+	}
+	return session
+}
+
+// GetContributeStatus tells the page if the loaded data can still be shared
+// with the fleet data.
+func (h *Handler) GetContributeStatus(c *gin.Context) {
+	session := h.currentSession(c)
+	if session == nil || len(session.DataManager.GetSessions()) == 0 {
+		c.JSON(http.StatusOK, gin.H{"can_contribute": false, "shared": false, "demo": false})
+		return
+	}
+	st := session.shareState()
+	c.JSON(http.StatusOK, gin.H{
+		"can_contribute": h.dbManager != nil && !st.demo && !st.shared && st.vehicleHash.Hash != "",
+		"shared":         st.shared,
+		"demo":           st.demo,
+	})
+}
+
+// Contribute stores the data that is already loaded in the caller's own
+// session in the fleet data. It is for users who give consent after the
+// analysis. Sessions that are already stored are skipped.
+func (h *Handler) Contribute(c *gin.Context) {
+	if h.dbManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database not initialized"})
+		return
+	}
+	session := h.currentSession(c)
+	if session == nil || len(session.DataManager.GetSessions()) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No uploaded data in this session. Upload your CarData file first."})
+		return
+	}
+	h.setSessionCookie(c, session.ID)
+
+	if !isConsent(c.PostForm("consent")) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Consent is required to share data"})
+		return
+	}
+	model := c.PostForm("model")
+	if model == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "BMW model selection is required when sharing data"})
+		return
+	}
+	if !vehicles.IsValidUploadModel(model) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown BMW model selection"})
+		return
+	}
+
+	st := session.shareState()
+	if st.demo {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Demo data cannot be shared"})
+		return
+	}
+	if st.vehicleHash.Hash == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No uploaded data in this session. Upload your CarData file first."})
+		return
+	}
+
+	sessions := session.DataManager.GetSessions()
+	isNew, err := h.dbManager.StoreSessionsForVehicle(sessions, st.vehicleHash, model)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error storing sessions in database: %v", err)})
+		return
+	}
+	session.markShared(st.vehicleHash)
+
+	storedCount, countErr := h.dbManager.GetSessionCount()
+	if countErr != nil {
+		log.Printf("Warning: Unable to get session count: %v", countErr)
+	}
+	message := "Your anonymous data was added to the fleet statistics"
+	if !isNew {
+		message = "This data is already in the fleet statistics"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message":      message,
+		"count":        len(sessions),
+		"new":          isNew,
+		"stored":       true,
+		"stored_count": storedCount,
+	})
+}
+
 // LoadDemoData loads demo data from a file
 func (h *Handler) LoadDemoData(c *gin.Context) {
 	// Open the demo file
-	file, err := os.Open("FINAL_DEMO_CHARGING_DATA_SMOOTH_CURVES.JSON")
+	file, err := os.Open(demoDataFile)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not load demo data"})
 		return
@@ -212,6 +319,7 @@ func (h *Handler) LoadDemoData(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error processing demo data: %v", err)})
 		return
 	}
+	session.setDemo()
 
 	// Get the processed sessions
 	sessions := session.DataManager.GetSessions()
@@ -276,7 +384,7 @@ func (h *Handler) GetSessions(c *gin.Context) {
 			"id":                     s.ID,
 			"index":                  i,
 			"start_time":             s.StartTime.Format(time.RFC3339),
-			"end_time":               s.EndTime.Format(time.RFC3339),
+			"end_time":               formatOptionalTime(s.EndTime),
 			"soc_start":              s.SocStart,
 			"soc_end":                s.SocEnd,
 			"energy_from_grid":       s.EnergyFromGrid,
@@ -593,3 +701,11 @@ func (h *Handler) GetGroupedProviders(c *gin.Context) {
 }
 
 // End of handler functions
+
+// formatOptionalTime formats t as RFC 3339, or returns "" when t is unknown.
+func formatOptionalTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}

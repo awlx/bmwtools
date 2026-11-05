@@ -18,20 +18,50 @@ All charging data is now stored in an SQLite database located in the `./data` di
 
 The system now tracks battery health (estimated capacity) over time, calculated from charging sessions with significant SOC changes. This gives you insights into battery degradation patterns across your fleet.
 
-### Model Filtering
+### Model and Battery Selection
 
-You can now filter battery health data by different BMW models, allowing you to compare degradation patterns across different vehicle types.
+At upload, select the model and the battery size. Trims with the same battery are one option, e.g. "BMW i4 eDrive40 / xDrive40 / M50 / M60 (80.7 kWh)". The list comes from `pkg/vehicles/catalog.go` and from `GET /api/vehicle-models`. The server rejects unknown values. Old values (e.g. "BMW i4") stay valid.
+
+### Battery Groups
+
+One model can have different battery sizes. The page puts each car into one battery group:
+
+1. **Selected:** the owner selected the battery at upload.
+2. **Matched:** old uploads without a battery. The page groups these cars by start capacity (a gap of 7 % or more starts a new group). Then it matches each group to the nearest known battery (maximum 7 % difference).
+3. **Auto:** no known battery is within 7 %, but one is within 15 %. The label is "~X kWh pack (auto)".
+
+**Plausibility check:** if the start capacity of a car is more than 15 % from every known battery of its model, the page excludes the car (e.g. a wrong model selection). The page shows the number of excluded cars. Models without known batteries have no check.
+
+**Short charges:** the analysis ignores measurements with a SoC change below 40 %. These measurements have a large error and read approx. 4.5 % too high. The database keeps them.
+
+**Start capacity:** the median of the first measurements of a car (first 3,000 km, minimum 5 points). A car needs 3 or more measurements. If the odometer goes back by more than 1,000 km, the page treats the data as a different car.
+
+### Degradation Charts
+
+- One chart for each battery group.
+- Each car starts at 100 % of its own start capacity. The x-axis shows the km or months since the first data of that car. Cars that join at high mileage thus show their real loss.
+- **Line (fixed-effects fit):** the page first takes one average per car in each step (5,000 km or 6 months). Then it fits "car value = car level + step effect" to all these averages (least squares, weighted by SoC change). The line shows the step effects. Cars that join or leave thus do not move the line, and the noise of one step does not add up.
+- **Start:** the % line starts at 100 % at 0. The measurements that make the start capacity are not in the fit, because they are near 100 % by definition. After that, the line starts at the median of the cars in the first reliable step.
+- **Minimum cars:** a step is reliable when 8 or more of its cars also have data in a different step. Reliable steps form the solid line. Steps with 2 to 7 cars show as a thin, faded, dashed line. The hover shows the number of these cars.
+- **Seasons:** charging losses change with temperature. Estimated values are approx. 1.5 % higher in summer than in winter. A 6-month step holds warm and cold months, which makes this effect smaller.
+- **Band:** the middle 50 % of the cars in each step. The band shows the spread, not the trend.
+- **Title figure:** the median slope of the cars, e.g. "≈ −0.7 % per 10,000 km". The page fits one straight line per car (% of start capacity). Only cars with 10 or more measurements over 20,000 km or more count. The value per year also needs 12 months of data per car. The page shows the value only when 5 or more cars count. Otherwise it shows "Not enough data".
+- **Left axis:** kWh for the median start capacity of the group. **Right axis:** % of start capacity.
+- Single measurements are hidden. Select "Show single measurements" to see them.
+- Groups with too few cars for a line are listed below the charts.
 
 ### Privacy Protection
 
-Vehicle identification numbers (FINs) are securely hashed before storage to maintain privacy while still allowing tracking of individual vehicles over time. No personal data or location information is stored in a way that could identify users.
+Vehicle identification numbers (FINs) are securely hashed before storage to maintain privacy while still allowing tracking of individual vehicles over time. No personal data or location information is stored in a way that could identify users. The salt comes from `BMWTOOLS_VIN_SALT` (see the README). Re-uploads of the same car join one vehicle; see "Fleet data identity" in the README.
 
 ## Using the Battery Health Dashboard
 
-1. Navigate to `/battery` in your browser
-2. View fleet-wide battery health trends
-3. Use the model filter to focus on specific BMW models
-4. Analyze both individual data points and the monthly trend line
+1. Go to `/battery`.
+2. Select the model. The page opens with the model that has the most cars.
+3. Optional: select one battery group, or the x-axis (km or months).
+4. Read the loss rate in the chart title, e.g. "≈ −0.7 % per 10,000 km".
+
+The API (`GET /api/battery-health?model=...`) does not return vehicle IDs or hashes.
 
 ## Technical Implementation
 
@@ -45,7 +75,8 @@ Vehicle identification numbers (FINs) are securely hashed before storage to main
 The system uses the following tables:
 
 - `uploads`: Tracks uploaded files with content hashes to prevent duplicates
-- `vehicles`: Stores hashed vehicle identifiers and models
+- `vehicles`: Stores hashed vehicle identifiers, models and the key kind (`vin`, `content`, `legacy`, `split`)
+- `vehicle_aliases`: Other hashes of the same car (for example a content hash before the first upload with a VIN)
 - `sessions`: Stores anonymized charging session data
 - `battery_health`: Tracks battery capacity estimates over time with mileage information
 

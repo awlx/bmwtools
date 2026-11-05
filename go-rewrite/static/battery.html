@@ -126,6 +126,39 @@
             margin: 20px 0;
             font-style: italic;
         }
+
+        .battery-charts {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+            gap: 20px;
+        }
+
+        .battery-charts.single {
+            grid-template-columns: 1fr;
+        }
+
+        .battery-chart {
+            height: 380px;
+            border: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .battery-charts.single .battery-chart {
+            height: 480px;
+        }
+
+        .battery-empty {
+            text-align: center;
+            padding: 40px;
+            color: var(--muted);
+        }
+
+        @media (max-width: 600px) {
+            .battery-charts {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -148,38 +181,50 @@
 
         <section class="filter-section">
             <div>
-                <label for="model-filter">Filter by Model:</label>
+                <label for="model-filter">Model:</label>
                 <select id="model-filter">
                     <!-- Will be populated dynamically -->
                 </select>
+            </div>
+            <div>
+                <label for="cohort-filter">Battery:</label>
+                <select id="cohort-filter">
+                    <option value="all">All batteries</option>
+                </select>
+            </div>
+            <div>
+                <label for="axis-filter">X-axis:</label>
+                <select id="axis-filter">
+                    <option value="km">Kilometers driven</option>
+                    <option value="time">Months of use</option>
+                </select>
+            </div>
+            <div>
+                <label for="points-toggle">
+                    <input type="checkbox" id="points-toggle"> Show single measurements
+                </label>
             </div>
         </section>
 
         <section class="battery-health-container">
             <div class="battery-info-box">
-                <h3>About Battery Capacity Measurements</h3>
-                <p>The chart below shows battery capacity estimates based on charging sessions plotted against vehicle mileage. Points represent individual measurements, while the blue line shows the linear average capacity trend at each mileage point.</p>
-                <p>A healthy battery will show gradual capacity decline with increasing mileage. Sudden drops may indicate calibration issues rather than actual capacity loss.</p>
+                <h3>How to read the charts</h3>
+                <p>One chart shows one battery size. Each car is compared with its own first measurements (100 %). The x-axis starts at the first data of each car.</p>
+                <p><strong>Line:</strong> the trend of the group. Each car is compared only with itself, so cars that join or leave do not move the line. The line starts at the first step after the start measurements of each car.</p>
+                <p><strong>Solid line:</strong> 8 or more cars. <strong>Faded line:</strong> 2 to 7 cars. Read the faded part with care. Point at the line to see the number of cars.</p>
+                <p><strong>Band:</strong> the middle 50 % of the cars.</p>
+                <p><strong>Left axis:</strong> capacity in kWh for the median start capacity of the group. <strong>Right axis:</strong> % of start capacity.</p>
             </div>
-            
-            <div class="chart-legend">
-                <div class="legend-item">
-                    <span class="legend-color" style="background-color: rgba(128, 128, 128, 0.3);"></span>
-                    <span>Individual Measurements</span>
-                </div>
-                <div class="legend-item">
-                    <span class="legend-color" style="background-color: #3498db;"></span>
-                    <span>Average at Current Kilometers</span>
-                </div>
-            </div>
-            
-            <div id="battery-health-chart" style="height: 500px;"></div>
-            
+
+            <div id="battery-charts" class="battery-charts"></div>
+
             <div class="chart-info">
-                <p><strong>Note:</strong> Battery capacity is estimated from charging sessions where a significant charge was added (>20% SOC change).</p>
+                <p id="battery-sparse-note"></p>
+                <p id="battery-excluded-note"></p>
+                <p><strong>Note:</strong> The capacity is estimated from charging sessions. The charts use only charges of 40 % SoC or more. Cars with fewer than 3 measurements are not in the charts.</p>
             </div>
         </section>
-        
+
         <div class="button-container" style="text-align: center; margin: 30px 0;">
             <a href="/" class="button">Back to Dashboard</a>
         </div>
@@ -196,253 +241,351 @@
 
     <!-- Battery Health JS -->
     <script>
+        const COHORT_COLORS = ['#2e86de', '#e67e22', '#27ae60', '#8e44ad', '#c0392b', '#16a085', '#d4ac0d', '#34495e'];
+
         document.addEventListener('DOMContentLoaded', function() {
-            const modelFilter = document.getElementById('model-filter');
-            
-            // Add event listener for model filter
-            modelFilter.addEventListener('change', loadBatteryHealthData);
-            
-            // Initial load
+            document.getElementById('model-filter').addEventListener('change', function() {
+                document.getElementById('cohort-filter').value = 'all';
+                loadBatteryHealthData();
+            });
+            ['cohort-filter', 'axis-filter', 'points-toggle'].forEach(id => {
+                document.getElementById(id).addEventListener('change', function() {
+                    if (window.__batteryResponse) {
+                        renderBatteryCharts(window.__batteryResponse);
+                    }
+                });
+            });
             loadBatteryHealthData();
         });
-        
+
+        async function fetchBatteryHealth(model) {
+            const url = model ? `/api/battery-health?model=${encodeURIComponent(model)}` : '/api/battery-health';
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP error ${response.status}`);
+            }
+            return response.json();
+        }
+
         async function loadBatteryHealthData() {
             try {
                 const modelFilter = document.getElementById('model-filter');
                 let selectedModel = modelFilter.value;
-                
-                // Initial API call without model filter to get available models
+
                 if (!selectedModel) {
-                    const initialResponse = await fetch('/api/battery-health');
-                    if (!initialResponse.ok) {
-                        throw new Error(`HTTP error ${initialResponse.status}`);
-                    }
-                    
-                    const initialData = await initialResponse.json();
-                    
-                    // Update model filter options
+                    const initialData = await fetchBatteryHealth('');
                     updateModelFilter(initialData.available_models, null);
-                    
-                    // If we have models, select the first one
-                    if (initialData.available_models && initialData.available_models.length > 0) {
-                        selectedModel = initialData.available_models[0];
-                        modelFilter.value = selectedModel;
-                        
-                        // Make a second request with the selected model
-                        const url = `/api/battery-health?model=${encodeURIComponent(selectedModel)}`;
-                        const modelResponse = await fetch(url);
-                        if (!modelResponse.ok) {
-                            throw new Error(`HTTP error ${modelResponse.status}`);
-                        }
-                        
-                        const data = await modelResponse.json();
-                        
-                        // Render the battery health chart with filtered data
-                        renderBatteryHealthChart(data.battery_health_data);
-                    } else {
-                        // No models available, show empty chart
-                        document.getElementById('battery-health-chart').innerHTML = 
-                            '<div style="text-align:center;padding:40px;color:#666;">No battery health data available</div>';
+                    if (!initialData.available_models || initialData.available_models.length === 0) {
+                        showEmpty('No battery health data available');
+                        return;
                     }
-                } else {
-                    // We already have a selected model, use it
-                    const url = `/api/battery-health?model=${encodeURIComponent(selectedModel)}`;
-                    
-                    const response = await fetch(url);
-                    if (!response.ok) {
-                        throw new Error(`HTTP error ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    
-                    // Update model filter options (but keep our current selection)
-                    updateModelFilter(data.available_models, selectedModel);
-                    
-                    // Render the battery health chart
-                    renderBatteryHealthChart(data.battery_health_data);
+                    // Open the model with the most cars, so the first view has a trend.
+                    const carsPerModel = {};
+                    (initialData.cohorts || []).forEach(c => {
+                        carsPerModel[c.model] = (carsPerModel[c.model] || 0) + c.vehicle_count;
+                    });
+                    const busiest = Object.keys(carsPerModel).sort((a, b) => carsPerModel[b] - carsPerModel[a])[0];
+                    selectedModel = (busiest && initialData.available_models.includes(busiest))
+                        ? busiest
+                        : (modelFilter.value || initialData.available_models[0]);
+                    modelFilter.value = selectedModel;
                 }
-                
+
+                const data = await fetchBatteryHealth(selectedModel);
+                updateModelFilter(data.available_models, selectedModel);
+                updateCohortFilter(data.cohorts || []);
+                renderBatteryCharts(data);
             } catch (error) {
                 console.error('Error loading battery health data:', error);
                 showError('Failed to load battery health data. Please try again later.');
             }
         }
-        
+
         function updateModelFilter(models, currentSelection) {
             if (!models || !Array.isArray(models)) return;
-            
             const modelFilter = document.getElementById('model-filter');
-            
-            // Save current selection
             const currentValue = currentSelection || modelFilter.value;
-            
-            // Clear all existing options
             modelFilter.innerHTML = '';
-            
-            // Add new options
             models.forEach(model => {
-                if (model) {  // Only add non-empty models
-                    const option = document.createElement('option');
-                    option.value = model;
-                    option.textContent = model;
-                    modelFilter.appendChild(option);
-                }
+                if (!model) return;
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelFilter.appendChild(option);
             });
-            
-            // Restore selection if it exists in the new options
-            if (currentValue) {
-                for (let i = 0; i < modelFilter.options.length; i++) {
-                    if (modelFilter.options[i].value === currentValue) {
-                        modelFilter.selectedIndex = i;
-                        break;
-                    }
-                }
+            if (currentValue && models.includes(currentValue)) {
+                modelFilter.value = currentValue;
             } else if (modelFilter.options.length > 0) {
-                // Select first option if no current selection
                 modelFilter.selectedIndex = 0;
             }
         }
-        
-        function renderBatteryHealthChart(batteryData) {
-            window.__batteryData = batteryData;
-            if (!batteryData || !Array.isArray(batteryData) || batteryData.length === 0) {
-                document.getElementById('battery-health-chart').innerHTML = 
-                    '<div style="text-align:center;padding:40px;color:var(--muted);">No battery health data available</div>';
+
+        function carCount(n) {
+            return `${n} car${n === 1 ? '' : 's'}`;
+        }
+
+        function updateCohortFilter(cohorts) {
+            const sel = document.getElementById('cohort-filter');
+            const current = sel.value;
+            sel.innerHTML = '';
+            const all = document.createElement('option');
+            all.value = 'all';
+            all.textContent = 'All batteries';
+            sel.appendChild(all);
+            cohorts.forEach(c => {
+                const option = document.createElement('option');
+                option.value = String(c.id);
+                option.textContent = `${c.label} (${carCount(c.vehicle_count)})`;
+                sel.appendChild(option);
+            });
+            sel.value = Array.from(sel.options).some(o => o.value === current) ? current : 'all';
+        }
+
+        function percentile(sorted, q) {
+            if (sorted.length === 0) return 0;
+            const pos = (sorted.length - 1) * q;
+            const lo = Math.floor(pos), hi = Math.ceil(pos);
+            return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+        }
+
+        function hexToRgba(hex, alpha) {
+            const n = parseInt(hex.slice(1), 16);
+            return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+        }
+
+        // A trend line needs at least one step after the start with 5+ cars.
+        function hasTrend(tr) {
+            return tr.some(t => t.reliable && t.x > 0);
+        }
+
+        function showEmpty(message) {
+            document.getElementById('battery-charts').innerHTML =
+                `<div class="battery-empty">${message}</div>`;
+        }
+
+        function renderBatteryCharts(data) {
+            window.__batteryResponse = data;
+            const container = document.getElementById('battery-charts');
+            const cohorts = (data && data.cohorts) || [];
+            const points = (data && data.cohort_points) || [];
+            const trends = (data && data.cohort_trends) || [];
+            const axis = document.getElementById('axis-filter').value;
+            const showPoints = document.getElementById('points-toggle').checked;
+            const cohortSel = document.getElementById('cohort-filter').value;
+
+            const colorOf = {};
+            cohorts.forEach((c, i) => { colorOf[c.id] = COHORT_COLORS[i % COHORT_COLORS.length]; });
+
+            // Build the data of each chart first, so all charts can share one % scale.
+            const panels = [];
+            cohorts.filter(c => cohortSel === 'all' || String(c.id) === cohortSel).forEach(c => {
+                const tr = trends.filter(t => t.cohort === c.id && t.metric === 'pct' && t.axis === axis);
+                const pts = points.filter(p => p.cohort === c.id && p.pct_of_baseline !== undefined && p.pct_of_baseline !== null)
+                    .map(p => ({ x: axis === 'km' ? p.km_since_first : p.months_since_first, y: p.pct_of_baseline }))
+                    .filter(p => p.x !== undefined && p.x !== null);
+                if (tr.length === 0 && pts.length === 0) return;
+                panels.push({ cohort: c, trend: tr, points: pts, color: colorOf[c.id] });
+            });
+
+            // Groups without a trend line add only noise; list them and draw
+            // them only when single measurements are on.
+            const noTrend = panels.filter(pn => !hasTrend(pn.trend));
+            const note = document.getElementById('battery-sparse-note');
+            note.textContent = (!showPoints && noTrend.length > 0)
+                ? `Not enough cars for a trend line: ${noTrend.map(pn => `${pn.cohort.label} (${carCount(pn.cohort.vehicle_count)})`).join(', ')}. Select "Show single measurements" to see their data.`
+                : '';
+            const excluded = ((data && data.excluded_vehicles) || []).reduce((n, e) => n + e.vehicles, 0);
+            document.getElementById('battery-excluded-note').textContent = excluded > 0
+                ? `${carCount(excluded)} excluded: battery size does not match the model.`
+                : '';
+            const visible = panels
+                .filter(pn => showPoints || hasTrend(pn.trend))
+                .sort((a, b) => b.cohort.vehicle_count - a.cohort.vehicle_count);
+            panels.length = 0;
+            panels.push(...visible);
+
+            if (panels.length === 0) {
+                showEmpty('Not enough cars for a trend line. Select "Show single measurements" to see the data.');
                 return;
             }
-            
-            // Separate data into raw points and trend
-            const rawPoints = batteryData.filter(item => !item.is_monthly_average).sort((a, b) => 
-                a.mileage - b.mileage);
-                
-            // Sort trend points by mileage for a proper kilometers-based trend line
-            const trendPoints = batteryData.filter(item => item.is_monthly_average).sort((a, b) => 
-                a.mileage - b.mileage);
-            
-            // Extract x and y values
-            const rawX = rawPoints.map(p => p.mileage);
-            const rawY = rawPoints.map(p => p.estimated_capacity);
-            const rawSizes = rawPoints.map(p => Math.min(20, Math.max(5, p.soc_change / 5)));
-            const rawModels = rawPoints.map(p => p.model || 'Unknown');
-            const rawDates = rawPoints.map(p => new Date(p.date));
-            
-            // Process trend points to create proper series
-            // Group by model to create separate trend lines
-            const modelGroups = {};
-            trendPoints.forEach(p => {
-                const model = p.model || 'Unknown';
-                if (!modelGroups[model]) {
-                    modelGroups[model] = [];
+
+            const ys = [100];
+            panels.forEach(pn => {
+                pn.trend.forEach(t => ys.push(t.p25, t.p75, t.value));
+                if (showPoints || !hasTrend(pn.trend)) {
+                    const sorted = pn.points.map(p => p.y).sort((a, b) => a - b);
+                    ys.push(percentile(sorted, 0.05), percentile(sorted, 0.95));
                 }
-                modelGroups[model].push(p);
             });
-            
-            // For each model, sort by mileage
-            Object.keys(modelGroups).forEach(model => {
-                modelGroups[model].sort((a, b) => a.mileage - b.mileage);
+            const yLo = Math.floor(Math.min(...ys) - 1);
+            const yHi = Math.ceil(Math.max(...ys) + 1);
+
+            container.innerHTML = '';
+            container.classList.toggle('single', panels.length === 1);
+            // Create all boxes first, so the grid has its final size before Plotly measures it.
+            panels.forEach((pn, i) => {
+                const div = document.createElement('div');
+                div.className = 'battery-chart';
+                div.id = `battery-chart-${i}`;
+                container.appendChild(div);
             });
-            
-            // Now create the trend data
-            const trendX = trendPoints.map(p => p.mileage);
-            const trendY = trendPoints.map(p => p.avg_capacity);
-            const trendModels = trendPoints.map(p => p.model || 'Unknown');
-            const trendDates = trendPoints.map(p => new Date(p.date));
-            
-            // Create hover text - hide dates from individual points
-            const rawHovertext = rawPoints.map((p, i) => {
-                return `Model: ${rawModels[i]}<br>Mileage: ${p.mileage.toLocaleString()} km<br>Capacity: ${p.estimated_capacity.toFixed(1)} kWh<br>SOC Change: ${p.soc_change.toFixed(1)}%`;
+            panels.forEach((pn, i) => drawPanel(`battery-chart-${i}`, pn, axis, showPoints, yLo, yHi));
+        }
+
+        function signed(v) {
+            return `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1)} %`;
+        }
+
+        // Median per-car linear slope (cars with 10+ points over 20,000+ km).
+        function slopeHeadline(c, axis) {
+            const perKm = c.slope_pct_per_10k_km;
+            const perYear = c.slope_pct_per_year;
+            if (perKm === undefined || perKm === null) {
+                return `Not enough data for a loss rate (${carCount(c.slope_km_vehicles || 0)} with 20,000+ km, 5 needed)`;
+            }
+            const km = `≈ ${signed(perKm)} per 10,000 km (${carCount(c.slope_km_vehicles)})`;
+            if (perYear === undefined || perYear === null) return km;
+            const year = `${signed(perYear)} per year (${carCount(c.slope_year_vehicles)})`;
+            return axis === 'km' ? `${km} · ${year}` : `≈ ${year} · ${signed(perKm)} per 10,000 km`;
+        }
+
+        function drawPanel(elId, pn, axis, showPoints, yLo, yHi) {
+            const c = pn.cohort;
+            const base = c.median_baseline;
+            const tr = pn.trend;
+            const traces = [];
+
+            if (showPoints || !hasTrend(tr)) {
+                traces.push({
+                    x: pn.points.map(p => p.x),
+                    y: pn.points.map(p => p.y),
+                    yaxis: 'y2',
+                    mode: 'markers',
+                    type: 'scatter',
+                    marker: { size: 4, color: hexToRgba(pn.color, 0.18) },
+                    hovertemplate: `%{y:.1f} %<br>%{x:,.0f} ${axis === 'km' ? 'km' : 'months'}<extra></extra>`
+                });
+            }
+            const solid = tr.filter(t => t.reliable);
+            const faint = tr.filter(t => !t.reliable);
+            const unit = axis === 'km' ? 'km' : 'months';
+            const hover = `<b>%{y:.1f} %</b><br>%{x:,.0f} ${unit} · %{customdata} cars<extra></extra>`;
+            if (faint.length > 0) {
+                // Steps with too few cars: a thin faded line through all
+                // steps, behind the solid line, so it continues the trend.
+                traces.push({
+                    x: tr.map(t => t.x),
+                    y: tr.map(t => t.value),
+                    yaxis: 'y2',
+                    mode: 'lines',
+                    type: 'scatter',
+                    line: { color: hexToRgba(pn.color, 0.4), width: 2, dash: 'dash', shape: 'spline', smoothing: 0.6 },
+                    hoverinfo: 'skip'
+                });
+                traces.push({
+                    x: faint.map(t => t.x),
+                    y: faint.map(t => t.value),
+                    customdata: faint.map(t => t.vehicles),
+                    yaxis: 'y2',
+                    mode: 'markers',
+                    type: 'scatter',
+                    marker: { size: 4, color: hexToRgba(pn.color, 0.4) },
+                    hovertemplate: hover
+                });
+            }
+            if (solid.length > 0) {
+                const xs = solid.map(t => t.x);
+                traces.push({
+                    x: xs.concat(xs.slice().reverse()),
+                    y: solid.map(t => t.p75).concat(solid.map(t => t.p25).reverse()),
+                    yaxis: 'y2',
+                    mode: 'lines',
+                    fill: 'toself',
+                    fillcolor: hexToRgba(pn.color, 0.18),
+                    line: { width: 0 },
+                    hoverinfo: 'skip',
+                    type: 'scatter'
+                });
+                traces.push({
+                    x: xs,
+                    y: solid.map(t => t.value),
+                    customdata: solid.map(t => t.vehicles),
+                    yaxis: 'y2',
+                    mode: 'lines+markers',
+                    type: 'scatter',
+                    line: { color: pn.color, width: 4, shape: 'spline', smoothing: 0.6 },
+                    marker: { size: 6, color: pn.color },
+                    hovertemplate: hover
+                });
+            }
+
+            // Draws the left kWh axis; Plotly hides an axis without data.
+            traces.push({
+                x: [0], y: [base], yaxis: 'y', mode: 'markers',
+                marker: { opacity: 0 }, hoverinfo: 'skip', type: 'scatter'
             });
-            
-            const trendHovertext = trendPoints.map((p, i) => {
-                return `Model: ${trendModels[i]}<br>Mileage: ${p.mileage.toLocaleString()} km<br>Avg Capacity: ${p.avg_capacity.toFixed(1)} kWh<br>Data Points: ${p.data_points}`;
-            });
-            
-            // Create traces
-            const rawTrace = {
-                x: rawX,
-                y: rawY,
-                mode: 'markers',
-                type: 'scatter',
-                name: 'Individual Measurements',
-                marker: {
-                    size: rawSizes,
-                    color: 'rgba(128, 128, 128, 0.3)',
-                    line: {
-                        color: 'rgba(128, 128, 128, 0.5)',
-                        width: 1
-                    }
-                },
-                hovertext: rawHovertext,
-                hoverinfo: 'text'
-            };
-            
-            const trendTrace = {
-                x: trendX,
-                y: trendY,
-                mode: 'lines+markers',
-                type: 'scatter',
-                name: 'Average at Current Kilometers',
-                line: {
-                    color: '#3498db',
-                    width: 3,
-                    shape: 'linear'  // Use linear trend line as requested
-                },
-                marker: {
-                    size: 8,
-                    color: '#3498db'
-                },
-                hovertext: trendHovertext,
-                hoverinfo: 'text'
-            };
-            
-            // Define layout (theme-aware so the chart re-skins in dark mode)
-            const theme = (window.BMWTheme && window.BMWTheme.plotlyLayout)
-                ? window.BMWTheme.plotlyLayout()
-                : {};
+
+            const headline = slopeHeadline(c, axis) || 'Not enough cars for a slope';
+
+            const theme = (window.BMWTheme && window.BMWTheme.plotlyLayout) ? window.BMWTheme.plotlyLayout() : {};
+            const titleColor = theme.title && theme.title.font ? theme.title.font.color : undefined;
+            const gridColor = (theme.yaxis && theme.yaxis.gridcolor) || 'rgba(128,128,128,0.2)';
             const layout = {
                 paper_bgcolor: theme.paper_bgcolor,
                 plot_bgcolor: theme.plot_bgcolor,
                 font: theme.font,
                 title: {
-                    text: 'Fleet Battery Capacity Over Kilometers Driven',
-                    font: { size: 20, color: theme.title && theme.title.font ? theme.title.font.color : undefined }
+                    text: `<b>${c.model} ${c.label}</b> · ${carCount(c.vehicle_count)}<br><span style="font-size:13px">${headline}</span>`,
+                    font: { size: 15, color: titleColor },
+                    x: 0.02,
+                    xanchor: 'left'
                 },
                 xaxis: {
                     ...(theme.xaxis || {}),
-                    title: 'Mileage (km)',
+                    title: axis === 'km' ? 'km driven since first data' : 'months since first data',
                     tickformat: ',d',
-                    autorange: true  // Let Plotly determine the best range
+                    rangemode: 'tozero',
+                    zeroline: false
                 },
                 yaxis: {
                     ...(theme.yaxis || {}),
-                    title: 'Estimated Capacity (kWh)',
-                    range: [
-                        Math.min(...rawY, ...trendY) * 0.95,  // Less aggressive scaling for better visualization
-                        Math.max(...rawY, ...trendY) * 1.03
-                    ]
+                    title: 'kWh',
+                    range: [yLo * base / 100, yHi * base / 100],
+                    tickformat: '.1f',
+                    fixedrange: true,
+                    showgrid: false,
+                    zeroline: false
                 },
+                yaxis2: {
+                    ...(theme.yaxis || {}),
+                    title: '% of start',
+                    overlaying: 'y',
+                    side: 'right',
+                    range: [yLo, yHi],
+                    ticksuffix: ' %',
+                    fixedrange: true,
+                    gridcolor: gridColor,
+                    zeroline: false
+                },
+                shapes: [{
+                    type: 'line', xref: 'paper', yref: 'y2', x0: 0, x1: 1, y0: 100, y1: 100,
+                    line: { color: 'rgba(128,128,128,0.7)', width: 1, dash: 'dot' }
+                }],
+                showlegend: false,
                 hovermode: 'closest',
-                legend: {
-                    ...(theme.legend || {}),
-                    orientation: 'h',
-                    y: -0.2
-                },
-                showlegend: true,
-                margin: { t: 50, b: 80, l: 60, r: 40 }
+                margin: { t: 70, b: 55, l: 60, r: 70 }
             };
-            
-            // Create the plot
-            Plotly.newPlot('battery-health-chart', [rawTrace, trendTrace], layout);
+            Plotly.newPlot(elId, traces, layout, { responsive: true, displaylogo: false });
         }
 
-        // Re-render the battery chart when the theme toggles so its background,
-        // axes and fonts follow light/dark mode.
+        // Re-render the charts when the theme toggles so backgrounds, axes and
+        // fonts follow light/dark mode.
         window.addEventListener('bmwthemechange', function() {
-            if (window.__batteryData) {
-                renderBatteryHealthChart(window.__batteryData);
+            if (window.__batteryResponse) {
+                renderBatteryCharts(window.__batteryResponse);
             }
         });
-        
+
         function showError(message) {
             // Create an error message element
             const errorElement = document.createElement('div');

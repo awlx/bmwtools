@@ -2,6 +2,7 @@ package data
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -138,8 +139,13 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 	// We'll track this through the IsUsingEstimatedValues() method now
 
 	for _, raw := range rawSessions {
+		// A record without a start time is not a CarData charging session
+		// (for example an empty object or a different JSON array).
+		if raw.StartTime <= 0 {
+			continue
+		}
 		startTime := time.Unix(raw.StartTime, 0)
-		endTime := time.Unix(raw.EndTime, 0)
+		endTime := sessionEndTime(raw)
 		socStart := raw.DisplayedStartSoc
 		socEnd := raw.DisplayedSoc
 		energyFromGrid := raw.EnergyConsumedFromPowerGridKwh
@@ -205,7 +211,7 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 		sessionTimeMinutes := 0.0
 		if raw.TotalChargingDurationSec > 0 {
 			sessionTimeMinutes = float64(raw.TotalChargingDurationSec) / 60.0
-		} else if raw.EndTime > 0 && endTime.After(startTime) {
+		} else if !endTime.IsZero() && endTime.After(startTime) {
 			sessionTimeMinutes = endTime.Sub(startTime).Minutes()
 		}
 
@@ -270,10 +276,40 @@ func (m *Manager) ProcessRawSessions(rawSessions []RawSession) error {
 		// via the UsingEstimatedEnergy field, which is used by IsUsingEstimatedValues()
 	}
 
+	if len(sessions) == 0 {
+		return ErrNoValidSessions
+	}
 	resolveProviderTies(sessions, votes)
 
 	m.sessions = sessions
 	return nil
+}
+
+// ErrNoValidSessions is returned when an upload contains no CarData charging
+// session with a start time.
+var ErrNoValidSessions = errors.New("the file contains no valid BMW CarData charging sessions")
+
+// sessionEndTime returns the end of a session. Some exports have no endTime
+// (0) or one before the start. Then the end of the last charging block is
+// used, else the start time plus the charging duration. If neither is known,
+// the end time stays zero (empty).
+func sessionEndTime(raw RawSession) time.Time {
+	if raw.EndTime >= raw.StartTime {
+		return time.Unix(raw.EndTime, 0)
+	}
+	var lastBlockEnd int64
+	for _, b := range raw.ChargingBlocks {
+		if b.EndTime > lastBlockEnd {
+			lastBlockEnd = b.EndTime
+		}
+	}
+	if lastBlockEnd > raw.StartTime {
+		return time.Unix(lastBlockEnd, 0)
+	}
+	if raw.TotalChargingDurationSec > 0 {
+		return time.Unix(raw.StartTime+raw.TotalChargingDurationSec, 0)
+	}
+	return time.Time{}
 }
 
 // GetSessions returns all sessions

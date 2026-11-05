@@ -56,6 +56,8 @@ func main() {
 	// Set up routes
 	// API routes
 	r.POST("/api/upload", apiHandler.UploadJSON)
+	r.POST("/api/contribute", apiHandler.Contribute)
+	r.GET("/api/contribute", apiHandler.GetContributeStatus)
 	r.GET("/api/demo", apiHandler.LoadDemoData)
 	r.GET("/api/sessions", apiHandler.GetSessions)
 	r.GET("/api/stats", apiHandler.GetStats)
@@ -65,6 +67,7 @@ func main() {
 	r.GET("/api/version", apiHandler.GetVersion)
 	r.GET("/api/anonymous-stats", apiHandler.GetAnonymousStats)
 	r.GET("/api/battery-health", apiHandler.GetBatteryHealth)
+	r.GET("/api/vehicle-models", apiHandler.GetVehicleModels)
 
 	// Create a custom static file handler with cache control headers
 	staticHandler := func(c *gin.Context) {
