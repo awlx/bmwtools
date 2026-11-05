@@ -41,7 +41,10 @@ import (
 
 // hashFIN mirrors database.hashFIN so migrated vehicles use the same id scheme.
 func hashFIN(vehicleIdentifier string) string {
-	salt := "BMWToolsAnonymousFleetStats2025"
+	salt := os.Getenv("BMWTOOLS_VIN_SALT")
+	if salt == "" {
+		salt = "BMWToolsAnonymousFleetStats2025"
+	}
 	h := sha256.New()
 	h.Write([]byte(salt + vehicleIdentifier))
 	return hex.EncodeToString(h.Sum(nil))
