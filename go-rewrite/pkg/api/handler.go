@@ -135,7 +135,7 @@ func (h *Handler) UploadJSON(c *gin.Context) {
 
 	// Get the processed sessions
 	sessions := session.DataManager.GetSessions()
-	vehicleHash := database.VehicleHash(fileHeader.Filename, sessions)
+	vehicleHash := database.VehicleKeyFor(fileHeader.Filename, sessions)
 	session.setUpload(vehicleHash, false)
 
 	// Check for consent to store in fleet statistics database
@@ -228,7 +228,7 @@ func (h *Handler) GetContributeStatus(c *gin.Context) {
 	}
 	st := session.shareState()
 	c.JSON(http.StatusOK, gin.H{
-		"can_contribute": h.dbManager != nil && !st.demo && !st.shared && st.vehicleHash != "",
+		"can_contribute": h.dbManager != nil && !st.demo && !st.shared && st.vehicleHash.Hash != "",
 		"shared":         st.shared,
 		"demo":           st.demo,
 	})
@@ -268,7 +268,7 @@ func (h *Handler) Contribute(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Demo data cannot be shared"})
 		return
 	}
-	if st.vehicleHash == "" {
+	if st.vehicleHash.Hash == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No uploaded data in this session. Upload your CarData file first."})
 		return
 	}
@@ -389,7 +389,7 @@ func (h *Handler) GetSessions(c *gin.Context) {
 			"id":                     s.ID,
 			"index":                  i,
 			"start_time":             s.StartTime.Format(time.RFC3339),
-			"end_time":               s.EndTime.Format(time.RFC3339),
+			"end_time":               formatOptionalTime(s.EndTime),
 			"soc_start":              s.SocStart,
 			"soc_end":                s.SocEnd,
 			"energy_from_grid":       s.EnergyFromGrid,
@@ -707,3 +707,11 @@ func (h *Handler) GetGroupedProviders(c *gin.Context) {
 }
 
 // End of handler functions
+
+// formatOptionalTime formats t as RFC 3339, or returns "" when t is unknown.
+func formatOptionalTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}

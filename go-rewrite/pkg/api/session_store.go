@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"github.com/awlx/bmwtools/pkg/database"
 	"sync"
 	"time"
 
@@ -19,20 +20,20 @@ type SessionData struct {
 	// Fleet sharing state of the loaded data. Only the salted vehicle hash is
 	// kept, never the filename or VIN.
 	shareMu     sync.Mutex
-	vehicleHash string
+	vehicleHash database.VehicleKey
 	demo        bool
 	shared      bool
 }
 
 // shareState is a snapshot of the fleet sharing state of a session.
 type shareState struct {
-	vehicleHash string
+	vehicleHash database.VehicleKey
 	demo        bool
 	shared      bool
 }
 
 // setUpload records the car of an uploaded file and whether it was shared.
-func (d *SessionData) setUpload(vehicleHash string, shared bool) {
+func (d *SessionData) setUpload(vehicleHash database.VehicleKey, shared bool) {
 	d.shareMu.Lock()
 	defer d.shareMu.Unlock()
 	d.vehicleHash, d.demo, d.shared = vehicleHash, false, shared
@@ -42,15 +43,15 @@ func (d *SessionData) setUpload(vehicleHash string, shared bool) {
 func (d *SessionData) setDemo() {
 	d.shareMu.Lock()
 	defer d.shareMu.Unlock()
-	d.vehicleHash, d.demo, d.shared = "", true, false
+	d.vehicleHash, d.demo, d.shared = database.VehicleKey{}, true, false
 }
 
 // markShared records that the loaded data of this car is in the fleet data.
 // It has no effect when other data was loaded in the meantime.
-func (d *SessionData) markShared(vehicleHash string) {
+func (d *SessionData) markShared(vehicleHash database.VehicleKey) {
 	d.shareMu.Lock()
 	defer d.shareMu.Unlock()
-	if d.vehicleHash == vehicleHash && !d.demo {
+	if d.vehicleHash.Hash == vehicleHash.Hash && !d.demo {
 		d.shared = true
 	}
 }

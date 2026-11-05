@@ -109,41 +109,46 @@ func (m *Manager) initSchema() error {
 			FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
 		);
 	`)
-
-	return err
+	if err != nil {
+		return err
+	}
+	return migrateIdentitySchema(m.db)
 }
 
 // StoreSessions stores charging sessions in the database.
 //
 // All sessions in a single upload belong to one vehicle, which is identified by
-// the VIN embedded in the export filename. Using a per-upload vehicle identity
-// (instead of the old per-session identity) means re-uploads from the same car
-// land on the same vehicle row and duplicate sessions are skipped, while
-// genuinely new sessions are appended.
+// the VIN embedded in the export filename. Re-uploads from the same car land on
+// the same vehicle row and duplicate sessions are skipped, while new sessions
+// are appended.
 func (m *Manager) StoreSessions(sessions []data.Session, filename string, userSpecifiedModel string) (bool, error) {
-	return m.StoreSessionsForVehicle(sessions, VehicleHash(filename, sessions), userSpecifiedModel)
+	return m.StoreSessionsForVehicle(sessions, VehicleKeyFor(filename, sessions), userSpecifiedModel)
 }
 
-// VehicleHash returns the salted one-way hash that identifies the car of an
+// VehicleKeyFor returns the salted one-way hash that identifies the car of an
 // upload. The VIN in the filename gives a single id per car; if it is missing
 // the file content hash is used, so the upload still maps to exactly one
 // vehicle rather than one per session. The VIN itself is never kept.
-func VehicleHash(filename string, sessions []data.Session) string {
-	vehicleKey := vehicleKeyFromFilename(filename)
-	if vehicleKey == "" {
-		vehicleKey = "content:" + hashSessions(sessions)
+func VehicleKeyFor(filename string, sessions []data.Session) VehicleKey {
+	if vin := vehicleKeyFromFilename(filename); vin != "" {
+		return VehicleKey{Hash: hashFIN(vin), FromVIN: true}
 	}
-	return hashFIN(vehicleKey)
+	return VehicleKey{Hash: hashFIN("content:" + hashSessions(sessions))}
 }
 
-// StoreSessionsForVehicle stores sessions for the car with the given
-// VehicleHash. Sessions that are already stored for this car are skipped, so
-// calling it again with the same data stores nothing and returns false.
-func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash string, userSpecifiedModel string) (bool, error) {
+// StoreSessionsForVehicle stores sessions for the car with the given key.
+//
+// The vehicle is found by its hash or an alias hash. If there is none, the
+// upload joins the stored vehicle that already holds enough of its sessions
+// (same session fingerprint), and the hash is kept as an alias. Two vehicles
+// with different VIN hashes are never joined. Sessions that are already
+// stored for the vehicle (same id or same fingerprint) are skipped, so a
+// second call with the same data stores nothing and returns false.
+func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, key VehicleKey, userSpecifiedModel string) (bool, error) {
+	finHash := key.Hash
 	if len(finHash) < 16 {
 		return false, fmt.Errorf("invalid vehicle hash")
 	}
-	// Generate a hash of the content to detect duplicate uploads.
 	contentHash := hashSessions(sessions)
 	finPrefix := finHash[:16]
 
@@ -151,8 +156,8 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 	// same charge start timestamp without colliding.
 	storedID := func(s data.Session) string { return finPrefix + "_" + s.ID }
 
-	// Start a transaction. The named return error drives the deferred rollback,
-	// so every early-exit path below assigns to `err` (never a shadowed copy).
+	// The named return error drives the deferred rollback, so every early-exit
+	// path below assigns to `err` (never a shadowed copy).
 	tx, err := m.db.Begin()
 	if err != nil {
 		return false, err
@@ -164,8 +169,41 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 		}
 	}()
 
-	// Find which of these sessions already exist (scoped to this vehicle).
-	existingSessions := make(map[string]bool)
+	vehicle, found, err := lookupVehicle(tx, finHash)
+	if err != nil {
+		return false, err
+	}
+	stored, err := storedFingerprints(tx, sessions)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		if vid, n, ok := bestFingerprintMatch(sessions, stored); ok {
+			candidate, vErr := vehicleByID(tx, vid)
+			if vErr != nil {
+				err = vErr
+				return false, err
+			}
+			if canJoin(key, candidate) {
+				if _, err = tx.Exec("INSERT OR IGNORE INTO vehicle_aliases (alias_hash, vehicle_id) VALUES (?, ?)", finHash, vid); err != nil {
+					return false, err
+				}
+				if key.FromVIN && candidate.kind != keyKindVIN {
+					if _, err = tx.Exec("UPDATE vehicles SET key_kind = ? WHERE id = ?", keyKindVIN, vid); err != nil {
+						return false, err
+					}
+				}
+				vehicle, found = candidate, true
+				log.Printf("Upload joined an existing vehicle by %d matching sessions", n)
+			} else {
+				log.Printf("Upload matches %d sessions of a vehicle with a different VIN; not joined", n)
+			}
+		}
+	}
+
+	// Find which of these sessions already exist: same stored id, or same
+	// fingerprint on this vehicle (covers ids from older id schemes).
+	existingIDs := make(map[string]bool)
 	if len(sessions) > 0 {
 		ids := make([]interface{}, len(sessions))
 		placeholders := make([]string, len(sessions))
@@ -173,7 +211,6 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 			ids[i] = storedID(s)
 			placeholders[i] = "?"
 		}
-
 		query := fmt.Sprintf("SELECT id FROM sessions WHERE id IN (%s)", strings.Join(placeholders, ","))
 		rows, qErr := tx.Query(query, ids...)
 		if qErr != nil {
@@ -187,7 +224,7 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 				err = scanErr
 				return false, err
 			}
-			existingSessions[id] = true
+			existingIDs[id] = true
 		}
 		if rowsErr := rows.Err(); rowsErr != nil {
 			rows.Close()
@@ -196,12 +233,33 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 		}
 		rows.Close()
 	}
+	toStore := make([]data.Session, 0, len(sessions))
+	seen := make(map[string]bool)
+	for _, s := range sessions {
+		fp := fingerprintOf(s)
+		if existingIDs[storedID(s)] || seen[fp] || (found && stored[fp][vehicle.id]) {
+			continue
+		}
+		seen[fp] = true
+		toStore = append(toStore, s)
+	}
+	duplicateSessionCount := len(sessions) - len(toStore)
+	newSessionCount := len(toStore)
 
-	duplicateSessionCount := len(existingSessions)
-	newSessionCount := len(sessions) - duplicateSessionCount
-
-	// Nothing new in this upload: treat it as a duplicate and don't record it.
-	if newSessionCount <= 0 {
+	// Nothing new in this upload: treat it as a duplicate. Keep a new alias and
+	// a model refinement, so the next upload finds the vehicle directly.
+	if newSessionCount == 0 {
+		if found {
+			if err = updateModel(tx, vehicle, userSpecifiedModel); err != nil {
+				return false, err
+			}
+		}
+		if found {
+			if err = tx.Commit(); err != nil {
+				return false, err
+			}
+			committed = true
+		}
 		return false, nil
 	}
 
@@ -215,46 +273,26 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 		return false, err
 	}
 
-	// Resolve (or create) the single vehicle for this upload.
-	var vehicleID int64
-	vErr := tx.QueryRow("SELECT id FROM vehicles WHERE fin_hash = ?", finHash).Scan(&vehicleID)
-	switch {
-	case vErr == sql.ErrNoRows:
+	if !found {
 		model := userSpecifiedModel
 		if model == "" {
 			model = "Unknown BMW EV"
 		}
 		res, insErr := tx.Exec(
-			"INSERT INTO vehicles (fin_hash, model, created_at) VALUES (?, ?, ?)",
-			finHash, model, time.Now(),
+			"INSERT INTO vehicles (fin_hash, model, created_at, key_kind) VALUES (?, ?, ?, ?)",
+			finHash, model, time.Now(), key.kind(),
 		)
 		if insErr != nil {
 			err = insErr
 			return false, err
 		}
-		vehicleID, _ = res.LastInsertId()
-	case vErr != nil:
-		err = vErr
-		return false, err
-	default:
-		// Vehicle already known: fill in the model if it was previously unknown.
-		if userSpecifiedModel != "" {
-			if _, upErr := tx.Exec(
-				"UPDATE vehicles SET model = ? WHERE id = ? AND (model IS NULL OR model = '' OR model = 'Unknown BMW EV')",
-				userSpecifiedModel, vehicleID,
-			); upErr != nil {
-				err = upErr
-				return false, err
-			}
-		}
+		vehicle.id, _ = res.LastInsertId()
+		vehicle.model = model
 	}
+	vehicleID := vehicle.id
 
-	// Process each new session.
-	for _, session := range sessions {
+	for _, session := range toStore {
 		sid := storedID(session)
-		if existingSessions[sid] {
-			continue
-		}
 
 		status := "failed"
 		if session.SocEnd > session.SocStart {
@@ -268,13 +306,19 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 			locationHash = hex.EncodeToString(h.Sum(nil))
 		}
 
+		// An unknown end time is stored empty (the column is NOT NULL).
+		var endTime interface{} = ""
+		if !session.EndTime.IsZero() {
+			endTime = session.EndTime.UTC()
+		}
+
 		if _, insErr := tx.Exec(
 			`INSERT INTO sessions 
 			(id, vehicle_id, start_time, end_time, soc_start, soc_end, 
 			energy_from_grid, energy_added_hvb, cost, efficiency, provider, 
 			avg_power, session_time_minutes, status, location_hash) 
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			sid, vehicleID, session.StartTime, session.EndTime,
+			sid, vehicleID, session.StartTime.UTC(), endTime,
 			session.SocStart, session.SocEnd, session.EnergyFromGrid,
 			session.EnergyAddedHvb, session.Cost, session.Efficiency,
 			session.Provider, session.AvgPower, session.SessionTimeMinutes,
@@ -296,10 +340,10 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 			var existingBHCount int
 			if scanErr := tx.QueryRow(`SELECT COUNT(*) FROM battery_health 
 				WHERE vehicle_id = ? 
-				AND date = ? 
+				AND strftime('%s', date) = strftime('%s', ?)
 				AND ABS(estimated_capacity - ?) < 0.01 
 				AND ABS(soc_change - ?) < 0.01`,
-				vehicleID, session.StartTime, estimatedCapacity, socChange,
+				vehicleID, session.StartTime.UTC(), estimatedCapacity, socChange,
 			).Scan(&existingBHCount); scanErr != nil {
 				err = scanErr
 				return false, err
@@ -310,13 +354,19 @@ func (m *Manager) StoreSessionsForVehicle(sessions []data.Session, finHash strin
 					`INSERT INTO battery_health 
 					(vehicle_id, date, estimated_capacity, soc_change, is_raw_data, mileage) 
 					VALUES (?, ?, ?, ?, ?, ?)`,
-					vehicleID, session.StartTime, estimatedCapacity,
+					vehicleID, session.StartTime.UTC(), estimatedCapacity,
 					socChange, !session.UsingEstimatedEnergy, session.Mileage,
 				); insErr != nil {
 					err = insErr
 					return false, err
 				}
 			}
+		}
+	}
+
+	if found {
+		if err = updateModel(tx, vehicle, userSpecifiedModel); err != nil {
+			return false, err
 		}
 	}
 
@@ -724,13 +774,10 @@ func vehicleKeyFromFilename(filename string) string {
 	return vinPattern.FindString(base)
 }
 
-// hashFIN creates a strong one-way hash with salt for privacy
+// hashFIN creates a salted one-way hash of a vehicle identifier. The salt
+// comes from BMWTOOLS_VIN_SALT (see vinSalt).
 func hashFIN(vehicleIdentifier string) string {
-	// Add a salt to make it even more secure against brute-force attacks
-	// Using a fixed salt that's specific to this application
-	salt := "BMWToolsAnonymousFleetStats2025"
-
 	h := sha256.New()
-	h.Write([]byte(salt + vehicleIdentifier))
+	h.Write([]byte(vinSalt() + vehicleIdentifier))
 	return hex.EncodeToString(h.Sum(nil))
 }

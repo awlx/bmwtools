@@ -2452,12 +2452,18 @@ function getMarkerHexColor(colorName) {
     return colorMap[colorName] || '#3388ff'; // Default to Leaflet blue
 }
 
+// sessionEndDate returns the session end, or the start when the export has no
+// end time.
+function sessionEndDate(s) {
+    return s.end_time ? new Date(s.end_time) : new Date(s.start_time);
+}
+
 // Create charge details graph
 function createChargeDetailsGraph() {
     if (!currentSession) return;
 
     const data = [{
-        x: [new Date(currentSession.start_time), new Date(currentSession.end_time)],
+        x: [new Date(currentSession.start_time), sessionEndDate(currentSession)],
         y: [currentSession.soc_start, currentSession.soc_end],
         mode: 'lines+markers',
         type: 'scatter',
@@ -2699,13 +2705,13 @@ function createCombinedGauges() {
         
         // Format date and time
         const startDate = new Date(currentSession.start_time);
-        const endDate = new Date(currentSession.end_time);
+        const endDate = currentSession.end_time ? new Date(currentSession.end_time) : null;
         const dateOptions = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
         const timeOptions = { hour: '2-digit', minute: '2-digit' };
         
         const formattedDate = startDate.toLocaleDateString(undefined, dateOptions);
         const formattedStartTime = startDate.toLocaleTimeString(undefined, timeOptions);
-        const formattedEndTime = endDate.toLocaleTimeString(undefined, timeOptions);
+        const formattedEndTime = endDate ? endDate.toLocaleTimeString(undefined, timeOptions) : '?';
         
         // Create info items
         const infoItems = [
@@ -2883,7 +2889,7 @@ function createGridPowerGraph() {
     
     // Calculate time points for x-axis
     const startTime = new Date(currentSession.start_time).getTime();
-    const endTime = new Date(currentSession.end_time).getTime();
+    const endTime = sessionEndDate(currentSession).getTime();
     const timeRange = endTime - startTime;
     const timePoints = currentSession.grid_power_start.map((_, i) => 
         new Date(startTime + (i * timeRange / currentSession.grid_power_start.length))

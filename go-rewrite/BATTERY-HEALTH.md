@@ -52,7 +52,7 @@ One model can have different battery sizes. The page puts each car into one batt
 
 ### Privacy Protection
 
-Vehicle identification numbers (FINs) are securely hashed before storage to maintain privacy while still allowing tracking of individual vehicles over time. No personal data or location information is stored in a way that could identify users.
+Vehicle identification numbers (FINs) are securely hashed before storage to maintain privacy while still allowing tracking of individual vehicles over time. No personal data or location information is stored in a way that could identify users. The salt comes from `BMWTOOLS_VIN_SALT` (see the README). Re-uploads of the same car join one vehicle; see "Fleet data identity" in the README.
 
 ## Using the Battery Health Dashboard
 
@@ -75,7 +75,8 @@ The API (`GET /api/battery-health?model=...`) does not return vehicle IDs or has
 The system uses the following tables:
 
 - `uploads`: Tracks uploaded files with content hashes to prevent duplicates
-- `vehicles`: Stores hashed vehicle identifiers and models
+- `vehicles`: Stores hashed vehicle identifiers, models and the key kind (`vin`, `content`, `legacy`, `split`)
+- `vehicle_aliases`: Other hashes of the same car (for example a content hash before the first upload with a VIN)
 - `sessions`: Stores anonymized charging session data
 - `battery_health`: Tracks battery capacity estimates over time with mileage information
 
