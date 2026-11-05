@@ -18,9 +18,31 @@ All charging data is now stored in an SQLite database located in the `./data` di
 
 The system now tracks battery health (estimated capacity) over time, calculated from charging sessions with significant SOC changes. This gives you insights into battery degradation patterns across your fleet.
 
-### Model Filtering
+### Model and Battery Selection
 
-You can now filter battery health data by different BMW models, allowing you to compare degradation patterns across different vehicle types.
+At upload, select the model and the battery size. Trims with the same battery are one option, e.g. "BMW i4 eDrive40 / xDrive40 / M50 / M60 (80.7 kWh)". The list comes from `pkg/vehicles/catalog.go` and from `GET /api/vehicle-models`. The server rejects unknown values. Old values (e.g. "BMW i4") stay valid.
+
+### Battery Groups
+
+One model can have different battery sizes. The page puts each car into one battery group:
+
+1. **Selected:** the owner selected the battery at upload.
+2. **Matched:** old uploads without a battery. The page groups these cars by start capacity (a gap of 7 % or more starts a new group). Then it matches each group to the nearest known battery (maximum 7 % difference).
+3. **Auto:** no known battery is within 7 %, but one is within 15 %. The label is "~X kWh pack (auto)".
+
+**Plausibility check:** if the start capacity of a car is more than 15 % from every known battery of its model, the page excludes the car (e.g. a wrong model selection). The page shows the number of excluded cars. Models without known batteries have no check.
+
+**Start capacity:** the median of the first measurements of a car (first 3,000 km, minimum 5 points). A car needs 3 or more measurements. If the odometer goes back by more than 1,000 km, the page treats the data as a different car.
+
+### Degradation Charts
+
+- One chart for each battery group.
+- Each car starts at 100 % of its own start capacity. The x-axis shows the km or months since the first data of that car. Cars that join at high mileage thus show their real loss.
+- **Line:** median of the cars in each step (5,000 km or 3 months). Each car counts once per step. A step needs 2 or more cars. A dotted line shows steps with few cars.
+- **Band:** the middle 50 % of the cars.
+- **Left axis:** kWh for the median start capacity of the group. **Right axis:** % of start capacity.
+- Single measurements are hidden. Select "Show single measurements" to see them.
+- Groups with too few cars for a line are listed below the charts.
 
 ### Privacy Protection
 
@@ -28,10 +50,12 @@ Vehicle identification numbers (FINs) are securely hashed before storage to main
 
 ## Using the Battery Health Dashboard
 
-1. Navigate to `/battery` in your browser
-2. View fleet-wide battery health trends
-3. Use the model filter to focus on specific BMW models
-4. Analyze both individual data points and the monthly trend line
+1. Go to `/battery`.
+2. Select the model. The page opens with the model that has the most cars.
+3. Optional: select one battery group, or the x-axis (km or months).
+4. Read the loss in the chart title, e.g. "−4.1 % after 52,500 km".
+
+The API (`GET /api/battery-health?model=...`) does not return vehicle IDs or hashes.
 
 ## Technical Implementation
 

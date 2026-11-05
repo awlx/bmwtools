@@ -152,6 +152,8 @@ function setupEventListeners() {
             modelSelector.style.display = this.checked ? 'block' : 'none';
         });
     }
+
+    loadVehicleModelOptions();
     
     // Set up drag and drop events for the upload container
     const uploadContainer = document.querySelector('.upload-container');
@@ -2972,6 +2974,52 @@ function createRangeMap() {
     L.circleMarker([currentSession.latitude, currentSession.longitude], markerOptions)
         .addTo(rangeMap)
         .bindPopup(`${currentSession.location}<br>${sessionStatus}<br>Energy Added: ${currentSession.energy_added_hvb.toFixed(2)} kWh`);
+}
+
+// Replace the static model list with battery-size groups from the server.
+// Each family is an <optgroup>; each option is one battery size, with all
+// trims that share that pack. The static list stays if the request fails.
+async function loadVehicleModelOptions() {
+    const select = document.getElementById('bmw-model');
+    if (!select) return;
+    try {
+        const response = await fetch('/api/vehicle-models');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data.families || data.families.length === 0) return;
+
+        const current = select.value;
+        select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Please select a model and battery (required)';
+        select.appendChild(placeholder);
+
+        data.families.forEach(family => {
+            const groups = family.groups || [];
+            if (groups.length === 0) {
+                const option = document.createElement('option');
+                option.value = family.name;
+                option.textContent = family.name;
+                select.appendChild(option);
+                return;
+            }
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = family.name;
+            groups.forEach(g => {
+                const option = document.createElement('option');
+                option.value = g.value;
+                option.textContent = g.generation ? `${g.label} – ${g.generation}` : g.label;
+                optgroup.appendChild(option);
+            });
+            select.appendChild(optgroup);
+        });
+        if (Array.from(select.options).some(o => o.value === current)) {
+            select.value = current;
+        }
+    } catch (error) {
+        console.error('Error loading vehicle models:', error);
+    }
 }
 
 // Initialize the application
