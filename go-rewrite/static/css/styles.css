@@ -220,6 +220,43 @@ html[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
     margin-bottom: 26px;
 }
 
+.share-panel {
+    background-color: var(--card-bg);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 22px;
+    margin-bottom: 26px;
+}
+
+.share-panel[hidden] {
+    display: none;
+}
+
+.share-panel h3 {
+    margin-top: 0;
+}
+
+.share-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.share-controls label {
+    color: var(--text);
+}
+
+.share-controls select {
+    color: var(--text);
+    background-color: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 6px 8px;
+    max-width: 100%;
+}
+
 /* File upload styles */
 .upload-section {
     display: flex;

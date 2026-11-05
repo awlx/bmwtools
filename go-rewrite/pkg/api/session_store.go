@@ -15,6 +15,50 @@ type SessionData struct {
 	DataManager  *data.Manager
 	CreatedAt    time.Time
 	LastAccessed time.Time
+
+	// Fleet sharing state of the loaded data. Only the salted vehicle hash is
+	// kept, never the filename or VIN.
+	shareMu     sync.Mutex
+	vehicleHash string
+	demo        bool
+	shared      bool
+}
+
+// shareState is a snapshot of the fleet sharing state of a session.
+type shareState struct {
+	vehicleHash string
+	demo        bool
+	shared      bool
+}
+
+// setUpload records the car of an uploaded file and whether it was shared.
+func (d *SessionData) setUpload(vehicleHash string, shared bool) {
+	d.shareMu.Lock()
+	defer d.shareMu.Unlock()
+	d.vehicleHash, d.demo, d.shared = vehicleHash, false, shared
+}
+
+// setDemo marks the loaded data as demo data. Demo data is never shared.
+func (d *SessionData) setDemo() {
+	d.shareMu.Lock()
+	defer d.shareMu.Unlock()
+	d.vehicleHash, d.demo, d.shared = "", true, false
+}
+
+// markShared records that the loaded data of this car is in the fleet data.
+// It has no effect when other data was loaded in the meantime.
+func (d *SessionData) markShared(vehicleHash string) {
+	d.shareMu.Lock()
+	defer d.shareMu.Unlock()
+	if d.vehicleHash == vehicleHash && !d.demo {
+		d.shared = true
+	}
+}
+
+func (d *SessionData) shareState() shareState {
+	d.shareMu.Lock()
+	defer d.shareMu.Unlock()
+	return shareState{vehicleHash: d.vehicleHash, demo: d.demo, shared: d.shared}
 }
 
 // SessionStore manages user sessions and their associated data

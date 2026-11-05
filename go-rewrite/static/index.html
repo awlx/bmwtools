@@ -113,6 +113,22 @@
             <button id="load-demo-data" class="button">Load Demo Data</button>
         </section>
 
+        <section id="share-panel" class="share-panel" hidden>
+            <h3>Share my data with the fleet</h3>
+            <p>Your data is not in the fleet statistics. You can add it now. The data stays anonymous: no VIN, no locations.</p>
+            <div class="consent-checkbox">
+                <input type="checkbox" id="share-consent">
+                <label for="share-consent">I agree to anonymously share my charging data for fleet-wide battery health and charging provider statistics</label>
+            </div>
+            <div class="share-controls">
+                <label for="share-model">BMW model and battery:</label>
+                <select id="share-model">
+                    <option value="">Please select a model (required)</option>
+                </select>
+                <button id="share-button" class="button">Share my data</button>
+            </div>
+        </section>
+
         <section class="date-filter">
             <label>Select Date Range for analysis (optional):</label>
             <div class="date-picker">

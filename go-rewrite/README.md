@@ -97,10 +97,13 @@ The application will be available at http://localhost:8050
 2. Visit the dashboard in your web browser
 3. Upload your BMW-CarData-Ladehistorie_*.json file
 4. Explore your charging data through the interactive dashboard
+5. Optional: share your data with the fleet statistics. You can do this at upload, or later with the "Share my data with the fleet" panel. Demo data cannot be shared.
 
 ## API Endpoints
 
 - `POST /api/upload` - Upload JSON file
+- `GET /api/contribute` - Tell if the loaded data can be shared with the fleet
+- `POST /api/contribute` - Share the loaded data with the fleet (`consent=true`, `model`). Data that is already stored is not stored again.
 - `GET /api/demo` - Load demo data
 - `GET /api/sessions` - Get all charging sessions
 - `GET /api/session/:id` - Get details for a specific session
