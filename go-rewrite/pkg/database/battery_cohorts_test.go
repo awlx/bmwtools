@@ -483,19 +483,19 @@ func TestCohortSlopePerCar(t *testing.T) {
 	var pts []BatteryHealthPoint
 	// 0.8 kWh per 10,000 km on an ~80 kWh pack: ≈ -1 % per 10,000 km.
 	// 40 points over 39,000 km and 390 days.
-	for id := int64(1); id <= 3; id++ {
+	for id := int64(1); id <= 5; id++ {
 		pts = append(pts, car(id, "m", 80, 500, 0.8, 40)...)
 	}
 	// Too short (14,000 km): not in the slope.
-	pts = append(pts, car(4, "m", 80, 500, 8, 15)...)
+	pts = append(pts, car(6, "m", 80, 500, 8, 15)...)
 	res := AnalyzeBatteryCohorts(pts)
 	c := res.Cohorts[0]
-	if c.SlopePer10kKm == nil || c.SlopeKmCars != 3 {
+	if c.SlopePer10kKm == nil || c.SlopeKmCars != 5 {
 		t.Fatalf("cohort = %+v", c)
 	}
 	approx(t, "per 10k km", *c.SlopePer10kKm, -0.8/79.84*100, 0.01)
 	// 100 km per day: 36,525 km per year.
-	if c.SlopePerYear == nil || c.SlopeYearCars != 3 {
+	if c.SlopePerYear == nil || c.SlopeYearCars != 5 {
 		t.Fatalf("per year missing: %+v", c)
 	}
 	approx(t, "per year", *c.SlopePerYear, -0.8/79.84*100*3.6525, 0.02)
@@ -503,5 +503,41 @@ func TestCohortSlopePerCar(t *testing.T) {
 	short := AnalyzeBatteryCohorts(car(5, "m", 80, 500, 0.8, 15))
 	if short.Cohorts[0].SlopePer10kKm != nil {
 		t.Error("slope from a short car")
+	}
+}
+
+func TestSlopeNeedsFiveCars(t *testing.T) {
+	var pts []BatteryHealthPoint
+	for id := int64(1); id <= 4; id++ {
+		pts = append(pts, car(id, "m", 80, 500, 0.8, 40)...)
+	}
+	c := AnalyzeBatteryCohorts(pts).Cohorts[0]
+	if c.SlopePer10kKm != nil || c.SlopePerYear != nil || c.SlopeKmCars != 4 {
+		t.Errorf("cohort = %+v, want no slope from 4 cars", c)
+	}
+}
+
+func TestShortChargesAreIgnored(t *testing.T) {
+	pts := car(1, "m", 80, 500, 0, 10)
+	// Short charges read too high: they must not change the baseline or
+	// appear in the output.
+	for i := 0; i < 10; i++ {
+		pts = append(pts, BatteryHealthPoint{VehicleID: 1, Model: "m", Date: t0, Mileage: 600 + float64(i), Capacity: 95, SocChange: 39.9})
+	}
+	pts = append(pts, BatteryHealthPoint{VehicleID: 1, Model: "m", Date: t0, Mileage: 700, Capacity: 80, SocChange: 40})
+	res := AnalyzeBatteryCohorts(pts)
+	approx(t, "baseline", res.Cohorts[0].MedianBaseline, 80, 1e-9)
+	if len(res.Points) != 11 {
+		t.Errorf("points = %d, want 11", len(res.Points))
+	}
+	for _, p := range res.Points {
+		if p.SocChange < minAnalysisSocChange {
+			t.Fatalf("short charge in output: %+v", p)
+		}
+	}
+	for _, tr := range res.Trends {
+		if tr.Value > 80.5 && tr.Metric == "kwh" {
+			t.Errorf("short charge in trend: %+v", tr)
+		}
 	}
 }

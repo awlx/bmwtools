@@ -41,7 +41,13 @@ const (
 	minVehiclesForTrend = 5
 	// Per-car slopes use only cars with enough points and distance.
 	slopeMinPoints = 10
-	slopeMinSpanKm = 20000.0
+	// minSlopeVehicles is the minimum number of qualifying cars for a slope.
+	minSlopeVehicles = 5
+	// minAnalysisSocChange is the minimum SoC change (%) of a point used in the
+	// analysis. Shorter charges have a large error and read too high (approx.
+	// +4.5 % at 30-39 % SoC, under ±1.3 % from 40 % SoC). Stored data is kept.
+	minAnalysisSocChange = 40.0
+	slopeMinSpanKm       = 20000.0
 	// slopeMinSpanMonths is the time span a car needs for the per-year slope,
 	// so that a full year of seasons is in the fit.
 	slopeMinSpanMonths = 12.0
@@ -76,8 +82,8 @@ type BatteryCohort struct {
 	MedianBaseline float64 `json:"median_baseline"`
 	VehicleCount   int     `json:"vehicle_count"`
 	SparseCount    int     `json:"sparse_vehicle_count"`
-	// Median per-car linear slope in % of start capacity. Nil when no car
-	// qualifies.
+	// Median per-car linear slope in % of start capacity. Nil when fewer
+	// than minSlopeVehicles cars qualify; the counts are always set.
 	SlopePer10kKm *float64 `json:"slope_pct_per_10k_km,omitempty"`
 	SlopeKmCars   int      `json:"slope_km_vehicles"`
 	SlopePerYear  *float64 `json:"slope_pct_per_year,omitempty"`
@@ -326,6 +332,9 @@ func AnalyzeBatteryCohorts(points []BatteryHealthPoint) BatteryCohortResult {
 	vehicles := map[int64]*vehicleStats{}
 	var order []int64
 	for _, p := range points {
+		if p.SocChange < minAnalysisSocChange {
+			continue
+		}
 		v, found := vehicles[p.VehicleID]
 		if !found {
 			v = &vehicleStats{id: p.VehicleID, model: p.Model, cohort: unassignedCohortID}
@@ -420,13 +429,14 @@ func AnalyzeBatteryCohorts(points []BatteryHealthPoint) BatteryCohortResult {
 		if !ok {
 			continue
 		}
-		if len(sl.perKm) > 0 {
+		c.SlopeKmCars, c.SlopeYearCars = len(sl.perKm), len(sl.perYear)
+		if len(sl.perKm) >= minSlopeVehicles {
 			m := median(sl.perKm)
-			c.SlopePer10kKm, c.SlopeKmCars = &m, len(sl.perKm)
+			c.SlopePer10kKm = &m
 		}
-		if len(sl.perYear) > 0 {
+		if len(sl.perYear) >= minSlopeVehicles {
 			m := median(sl.perYear)
-			c.SlopePerYear, c.SlopeYearCars = &m, len(sl.perYear)
+			c.SlopePerYear = &m
 		}
 	}
 	return result

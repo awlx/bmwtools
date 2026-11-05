@@ -32,6 +32,8 @@ One model can have different battery sizes. The page puts each car into one batt
 
 **Plausibility check:** if the start capacity of a car is more than 15 % from every known battery of its model, the page excludes the car (e.g. a wrong model selection). The page shows the number of excluded cars. Models without known batteries have no check.
 
+**Short charges:** the analysis ignores measurements with a SoC change below 40 %. These measurements have a large error and read approx. 4.5 % too high. The database keeps them.
+
 **Start capacity:** the median of the first measurements of a car (first 3,000 km, minimum 5 points). A car needs 3 or more measurements. If the odometer goes back by more than 1,000 km, the page treats the data as a different car.
 
 ### Degradation Charts
@@ -42,7 +44,7 @@ One model can have different battery sizes. The page puts each car into one batt
 - **Minimum cars:** a step needs 5 or more cars for the line. Steps with 2 to 4 cars show as faded dots. The hover shows the number of cars.
 - **Seasons:** charging losses change with temperature. Estimated values are approx. 1.5 % higher in summer than in winter. A 6-month step holds warm and cold months, which makes this effect smaller.
 - **Band:** the middle 50 % of the cars.
-- **Title figure:** the median slope of the cars, e.g. "≈ −0.7 % per 10,000 km". The page fits one straight line per car (% of start capacity). Only cars with 10 or more measurements over 20,000 km or more count. The value per year also needs 12 months of data per car.
+- **Title figure:** the median slope of the cars, e.g. "≈ −0.7 % per 10,000 km". The page fits one straight line per car (% of start capacity). Only cars with 10 or more measurements over 20,000 km or more count. The value per year also needs 12 months of data per car. The page shows the value only when 5 or more cars count. Otherwise it shows "Not enough data".
 - **Left axis:** kWh for the median start capacity of the group. **Right axis:** % of start capacity.
 - Single measurements are hidden. Select "Show single measurements" to see them.
 - Groups with too few cars for a line are listed below the charts.

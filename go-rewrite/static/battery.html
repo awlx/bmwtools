@@ -438,7 +438,9 @@
         function slopeHeadline(c, axis) {
             const perKm = c.slope_pct_per_10k_km;
             const perYear = c.slope_pct_per_year;
-            if (perKm === undefined || perKm === null) return '';
+            if (perKm === undefined || perKm === null) {
+                return `Not enough data for a loss rate (${carCount(c.slope_km_vehicles || 0)} with 20,000+ km, 5 needed)`;
+            }
             const km = `≈ ${signed(perKm)} per 10,000 km (${carCount(c.slope_km_vehicles)})`;
             if (perYear === undefined || perYear === null) return km;
             const year = `${signed(perYear)} per year (${carCount(c.slope_year_vehicles)})`;
