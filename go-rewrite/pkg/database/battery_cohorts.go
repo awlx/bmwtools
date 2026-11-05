@@ -30,9 +30,21 @@ const (
 	// baselines differ by a few percent at most.
 	cohortGapRatio = 0.07
 
-	trendKmBin         = 5000.0
-	trendMonthBin      = 3.0
-	minVehiclesPerBin  = 2
+	trendKmBin = 5000.0
+	// trendMonthBin is 6 months: one bin holds both warm and cold months, so
+	// the seasonal change of charging losses has less effect on the % trend.
+	trendMonthBin = 6.0
+	// minVehiclesPerBin is the minimum number of cars for a bin in the output.
+	minVehiclesPerBin = 2
+	// minVehiclesForTrend is the minimum number of cars for a reliable bin.
+	// Only reliable bins form the trend line; the page shows others faded.
+	minVehiclesForTrend = 5
+	// Per-car slopes use only cars with enough points and distance.
+	slopeMinPoints = 10
+	slopeMinSpanKm = 20000.0
+	// slopeMinSpanMonths is the time span a car needs for the per-year slope,
+	// so that a full year of seasons is in the fit.
+	slopeMinSpanMonths = 12.0
 	daysPerMonth       = 30.4375
 	unassignedCohortID = -1
 )
@@ -64,6 +76,12 @@ type BatteryCohort struct {
 	MedianBaseline float64 `json:"median_baseline"`
 	VehicleCount   int     `json:"vehicle_count"`
 	SparseCount    int     `json:"sparse_vehicle_count"`
+	// Median per-car linear slope in % of start capacity. Nil when no car
+	// qualifies.
+	SlopePer10kKm *float64 `json:"slope_pct_per_10k_km,omitempty"`
+	SlopeKmCars   int      `json:"slope_km_vehicles"`
+	SlopePerYear  *float64 `json:"slope_pct_per_year,omitempty"`
+	SlopeYearCars int      `json:"slope_year_vehicles"`
 }
 
 // CohortPoint is a capacity estimate annotated with its cohort. It has no
@@ -95,6 +113,8 @@ type CohortTrendPoint struct {
 	P75      float64 `json:"p75"`
 	Vehicles int     `json:"vehicles"`
 	Points   int     `json:"points"`
+	// Reliable is true when the bin has at least minVehiclesForTrend cars.
+	Reliable bool `json:"reliable"`
 }
 
 // BatteryCohortResult is the complete cohort analysis.
@@ -126,6 +146,22 @@ type vehicleStats struct {
 	firstDate   time.Time
 	cohort      int
 	excluded    bool
+	window      baselineWindow
+}
+
+// baselineWindow marks the points used for a car's baseline. These points are
+// near 100 % by construction, so the % trend leaves them out.
+type baselineWindow struct {
+	byKm    bool
+	lastKm  float64
+	lastDay time.Time
+}
+
+func (w baselineWindow) contains(p BatteryHealthPoint) bool {
+	if w.byKm && p.Mileage > 0 {
+		return p.Mileage <= w.lastKm
+	}
+	return !p.Date.After(w.lastDay)
 }
 
 // packPlausibilityRatio is the maximum relative distance between a car's start
@@ -179,8 +215,15 @@ func quantile(values []float64, q float64) float64 {
 // are used (at least baselineMinWindowPoints points). Without mileage the
 // earliest points by date are used. ok is false for cars with too few points.
 func computeBaseline(points []BatteryHealthPoint) (baseline float64, ok bool) {
+	baseline, _, ok = computeBaselineWindow(points)
+	return baseline, ok
+}
+
+// computeBaselineWindow is computeBaseline that also returns the window of
+// points that form the baseline.
+func computeBaselineWindow(points []BatteryHealthPoint) (baseline float64, window baselineWindow, ok bool) {
 	if len(points) < minPointsForBaseline {
-		return 0, false
+		return 0, window, false
 	}
 	var withKm []BatteryHealthPoint
 	for _, p := range points {
@@ -202,14 +245,21 @@ func computeBaseline(points []BatteryHealthPoint) (baseline float64, ok bool) {
 		sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Date.Before(ordered[j].Date) })
 	}
 
+	window.byKm = ordered[0].Mileage > 0
 	var caps []float64
 	for i, p := range ordered {
-		inWindow := ordered[0].Mileage > 0 && p.Mileage-ordered[0].Mileage <= baselineWindowKm
+		inWindow := window.byKm && p.Mileage-ordered[0].Mileage <= baselineWindowKm
 		if i < baselineMinWindowPoints || inWindow {
 			caps = append(caps, p.Capacity)
+			if p.Mileage > window.lastKm {
+				window.lastKm = p.Mileage
+			}
+			if p.Date.After(window.lastDay) {
+				window.lastDay = p.Date
+			}
 		}
 	}
-	return median(caps), true
+	return median(caps), window, true
 }
 
 // clusterBaselines groups sorted baselines, splitting where the relative gap to
@@ -299,7 +349,7 @@ func AnalyzeBatteryCohorts(points []BatteryHealthPoint) BatteryCohortResult {
 		if g, ok := vehiclecatalog.Group(v.model); ok {
 			v.pack = &g
 		}
-		v.baseline, v.hasBaseline = computeBaseline(v.points)
+		v.baseline, v.window, v.hasBaseline = computeBaselineWindow(v.points)
 		for _, p := range v.points {
 			if p.Mileage > 0 && (!v.hasKm || p.Mileage < v.firstKm) {
 				v.firstKm, v.hasKm = p.Mileage, true
@@ -363,6 +413,22 @@ func AnalyzeBatteryCohorts(points []BatteryHealthPoint) BatteryCohortResult {
 	sort.SliceStable(result.Points, func(i, j int) bool { return result.Points[i].Date.Before(result.Points[j].Date) })
 
 	result.Trends = buildCohortTrends(series)
+	slopes := cohortSlopes(series)
+	for i := range result.Cohorts {
+		c := &result.Cohorts[i]
+		sl, ok := slopes[c.ID]
+		if !ok {
+			continue
+		}
+		if len(sl.perKm) > 0 {
+			m := median(sl.perKm)
+			c.SlopePer10kKm, c.SlopeKmCars = &m, len(sl.perKm)
+		}
+		if len(sl.perYear) > 0 {
+			m := median(sl.perYear)
+			c.SlopePerYear, c.SlopeYearCars = &m, len(sl.perYear)
+		}
+	}
 	return result
 }
 
@@ -587,7 +653,7 @@ func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 			month := p.Date.UTC().Format("2006-01")
 			add(trendKey{v.cohort, "kwh", "time", month}, 0, month, id, p.Capacity, p.SocChange)
 
-			if !v.hasBaseline || v.baseline <= 0 {
+			if !v.hasBaseline || v.baseline <= 0 || v.window.contains(p) {
 				continue
 			}
 			pct := p.Capacity / v.baseline * 100
@@ -601,7 +667,26 @@ func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 		}
 	}
 
+	// Every % trend starts at 100 % at x = 0: the baseline window itself.
+	baselineCars := map[int]int{}
+	for _, v := range series {
+		if !v.excluded && v.cohort != unassignedCohortID && v.hasBaseline && v.baseline > 0 {
+			baselineCars[v.cohort]++
+		}
+	}
 	trends := []CohortTrendPoint{}
+	for cohort, n := range baselineCars {
+		if n < minVehiclesPerBin {
+			continue
+		}
+		for _, axis := range []string{"km", "time"} {
+			trends = append(trends, CohortTrendPoint{
+				Cohort: cohort, Metric: "pct", Axis: axis, X: 0,
+				Value: 100, P25: 100, P75: 100,
+				Vehicles: n, Reliable: n >= minVehiclesForTrend,
+			})
+		}
+	}
 	for k, b := range bins {
 		if len(b.vehicles) < minVehiclesPerBin {
 			continue
@@ -621,6 +706,7 @@ func buildCohortTrends(series []*vehicleStats) []CohortTrendPoint {
 			P75:      quantile(perVehicle, 0.75),
 			Vehicles: len(b.vehicles),
 			Points:   b.points,
+			Reliable: len(b.vehicles) >= minVehiclesForTrend,
 		})
 	}
 	sort.Slice(trends, func(i, j int) bool {
@@ -689,4 +775,77 @@ func (m *Manager) GetBatteryCohorts(modelFilter string) (BatteryCohortResult, er
 		return empty, err
 	}
 	return AnalyzeBatteryCohorts(points), nil
+}
+
+// linearSlope returns the least-squares slope of y over x.
+func linearSlope(xs, ys []float64) (float64, bool) {
+	n := float64(len(xs))
+	if len(xs) < 2 {
+		return 0, false
+	}
+	var sx, sy float64
+	for i := range xs {
+		sx += xs[i]
+		sy += ys[i]
+	}
+	mx, my := sx/n, sy/n
+	var sxy, sxx float64
+	for i := range xs {
+		sxy += (xs[i] - mx) * (ys[i] - my)
+		sxx += (xs[i] - mx) * (xs[i] - mx)
+	}
+	if sxx == 0 {
+		return 0, false
+	}
+	return sxy / sxx, true
+}
+
+type cohortSlope struct {
+	perKm, perYear []float64
+}
+
+// cohortSlopes fits one line per car (% of baseline over km and over years)
+// and collects the slopes per cohort. Only cars with at least slopeMinPoints
+// points over slopeMinSpanKm qualify. The per-year slope also needs
+// slopeMinSpanMonths of data.
+func cohortSlopes(series []*vehicleStats) map[int]*cohortSlope {
+	out := map[int]*cohortSlope{}
+	for _, v := range series {
+		if v.excluded || v.cohort == unassignedCohortID || !v.hasBaseline || v.baseline <= 0 {
+			continue
+		}
+		var km, kmPct, years, yearPct []float64
+		minKm, maxKm := math.Inf(1), math.Inf(-1)
+		for _, p := range v.points {
+			pct := p.Capacity / v.baseline * 100
+			if p.Mileage > 0 {
+				km = append(km, p.Mileage)
+				kmPct = append(kmPct, pct)
+				minKm, maxKm = math.Min(minKm, p.Mileage), math.Max(maxKm, p.Mileage)
+			}
+			years = append(years, p.Date.Sub(v.firstDate).Hours()/24/daysPerMonth/12)
+			yearPct = append(yearPct, pct)
+		}
+		if len(km) < slopeMinPoints || maxKm-minKm < slopeMinSpanKm {
+			continue
+		}
+		c, ok := out[v.cohort]
+		if !ok {
+			c = &cohortSlope{}
+			out[v.cohort] = c
+		}
+		if slope, ok := linearSlope(km, kmPct); ok {
+			c.perKm = append(c.perKm, slope*10000)
+		}
+		spanYears := 0.0
+		for _, y := range years {
+			spanYears = math.Max(spanYears, y)
+		}
+		if spanYears*12 >= slopeMinSpanMonths {
+			if slope, ok := linearSlope(years, yearPct); ok {
+				c.perYear = append(c.perYear, slope)
+			}
+		}
+	}
+	return out
 }

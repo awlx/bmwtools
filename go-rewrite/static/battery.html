@@ -351,8 +351,9 @@
             return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
         }
 
-        function formatX(x, axis) {
-            return axis === 'km' ? `${Math.round(x).toLocaleString()} km` : `${x.toFixed(0)} months`;
+        // A trend line needs at least one step after the start with 5+ cars.
+        function hasTrend(tr) {
+            return tr.some(t => t.reliable && t.x > 0);
         }
 
         function showEmpty(message) {
@@ -386,7 +387,7 @@
 
             // Groups without a trend line add only noise; list them and draw
             // them only when single measurements are on.
-            const noTrend = panels.filter(pn => pn.trend.length === 0);
+            const noTrend = panels.filter(pn => !hasTrend(pn.trend));
             const note = document.getElementById('battery-sparse-note');
             note.textContent = (!showPoints && noTrend.length > 0)
                 ? `Not enough cars for a trend line: ${noTrend.map(pn => `${pn.cohort.label} (${carCount(pn.cohort.vehicle_count)})`).join(', ')}. Select "Show single measurements" to see their data.`
@@ -396,7 +397,7 @@
                 ? `${carCount(excluded)} excluded: battery size does not match the model.`
                 : '';
             const visible = panels
-                .filter(pn => showPoints || pn.trend.length > 0)
+                .filter(pn => showPoints || hasTrend(pn.trend))
                 .sort((a, b) => b.cohort.vehicle_count - a.cohort.vehicle_count);
             panels.length = 0;
             panels.push(...visible);
@@ -409,7 +410,7 @@
             const ys = [100];
             panels.forEach(pn => {
                 pn.trend.forEach(t => ys.push(t.p25, t.p75, t.value));
-                if (showPoints || pn.trend.length === 0) {
+                if (showPoints || !hasTrend(pn.trend)) {
                     const sorted = pn.points.map(p => p.y).sort((a, b) => a - b);
                     ys.push(percentile(sorted, 0.05), percentile(sorted, 0.95));
                 }
@@ -429,14 +430,19 @@
             panels.forEach((pn, i) => drawPanel(`battery-chart-${i}`, pn, axis, showPoints, yLo, yHi));
         }
 
-        // Index of the last trend step with a fair share of the cars. Later
-        // steps have only a few cars and are drawn as a dotted line.
-        function lastSolidIndex(tr) {
-            const peak = Math.max(...tr.map(t => t.vehicles));
-            const min = Math.min(peak, Math.max(3, Math.ceil(peak * 0.25)));
-            let idx = 0;
-            tr.forEach((t, i) => { if (t.vehicles >= min) idx = i; });
-            return idx;
+        function signed(v) {
+            return `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1)} %`;
+        }
+
+        // Median per-car linear slope (cars with 10+ points over 20,000+ km).
+        function slopeHeadline(c, axis) {
+            const perKm = c.slope_pct_per_10k_km;
+            const perYear = c.slope_pct_per_year;
+            if (perKm === undefined || perKm === null) return '';
+            const km = `≈ ${signed(perKm)} per 10,000 km (${carCount(c.slope_km_vehicles)})`;
+            if (perYear === undefined || perYear === null) return km;
+            const year = `${signed(perYear)} per year (${carCount(c.slope_year_vehicles)})`;
+            return axis === 'km' ? `${km} · ${year}` : `≈ ${year} · ${signed(perKm)} per 10,000 km`;
         }
 
         function drawPanel(elId, pn, axis, showPoints, yLo, yHi) {
@@ -445,7 +451,7 @@
             const tr = pn.trend;
             const traces = [];
 
-            if (showPoints || tr.length === 0) {
+            if (showPoints || !hasTrend(tr)) {
                 traces.push({
                     x: pn.points.map(p => p.x),
                     y: pn.points.map(p => p.y),
@@ -456,11 +462,28 @@
                     hovertemplate: `%{y:.1f} %<br>%{x:,.0f} ${axis === 'km' ? 'km' : 'months'}<extra></extra>`
                 });
             }
-            if (tr.length > 0) {
-                const xs = tr.map(t => t.x);
+            const solid = tr.filter(t => t.reliable);
+            const faint = tr.filter(t => !t.reliable);
+            const unit = axis === 'km' ? 'km' : 'months';
+            const hover = `<b>%{y:.1f} %</b><br>%{x:,.0f} ${unit} · %{customdata} cars<extra></extra>`;
+            if (faint.length > 0) {
+                // Steps with fewer than 5 cars: faded, not part of the line.
+                traces.push({
+                    x: faint.map(t => t.x),
+                    y: faint.map(t => t.value),
+                    customdata: faint.map(t => t.vehicles),
+                    yaxis: 'y2',
+                    mode: 'markers',
+                    type: 'scatter',
+                    marker: { size: 6, color: hexToRgba(pn.color, 0.3) },
+                    hovertemplate: hover
+                });
+            }
+            if (solid.length > 0) {
+                const xs = solid.map(t => t.x);
                 traces.push({
                     x: xs.concat(xs.slice().reverse()),
-                    y: tr.map(t => t.p75).concat(tr.map(t => t.p25).reverse()),
+                    y: solid.map(t => t.p75).concat(solid.map(t => t.p25).reverse()),
                     yaxis: 'y2',
                     mode: 'lines',
                     fill: 'toself',
@@ -469,11 +492,10 @@
                     hoverinfo: 'skip',
                     type: 'scatter'
                 });
-                const hover = `<b>%{y:.1f} %</b><br>%{x:,.0f} ${axis === 'km' ? 'km' : 'months'}<extra></extra>`;
-                const cut = lastSolidIndex(tr);
                 traces.push({
-                    x: xs.slice(0, cut + 1),
-                    y: tr.slice(0, cut + 1).map(t => t.value),
+                    x: xs,
+                    y: solid.map(t => t.value),
+                    customdata: solid.map(t => t.vehicles),
                     yaxis: 'y2',
                     mode: 'lines+markers',
                     type: 'scatter',
@@ -481,18 +503,6 @@
                     marker: { size: 6, color: pn.color },
                     hovertemplate: hover
                 });
-                if (cut < tr.length - 1) {
-                    traces.push({
-                        x: xs.slice(cut),
-                        y: tr.slice(cut).map(t => t.value),
-                        yaxis: 'y2',
-                        mode: 'lines+markers',
-                        type: 'scatter',
-                        line: { color: hexToRgba(pn.color, 0.6), width: 2, dash: 'dot' },
-                        marker: { size: 4, color: hexToRgba(pn.color, 0.6) },
-                        hovertemplate: hover
-                    });
-                }
             }
 
             // Draws the left kWh axis; Plotly hides an axis without data.
@@ -501,14 +511,7 @@
                 marker: { opacity: 0 }, hoverinfo: 'skip', type: 'scatter'
             });
 
-            let headline = 'Not enough cars for a trend line';
-            if (tr.length > 0) {
-                // Report the last step that still has a fair share of the cars,
-                // not a tail step with only 2 or 3 cars.
-                const last = tr[lastSolidIndex(tr)];
-                const loss = 100 - last.value;
-                headline = `${loss >= 0 ? '−' : '+'}${Math.abs(loss).toFixed(1)} % after ${formatX(last.x, axis)}`;
-            }
+            const headline = slopeHeadline(c, axis) || 'Not enough cars for a slope';
 
             const theme = (window.BMWTheme && window.BMWTheme.plotlyLayout) ? window.BMWTheme.plotlyLayout() : {};
             const titleColor = theme.title && theme.title.font ? theme.title.font.color : undefined;

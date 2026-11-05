@@ -411,3 +411,97 @@ func TestImplausibleBatteryIsExcluded(t *testing.T) {
 		t.Error("plausibleForFamily")
 	}
 }
+
+func pctKmTrend(res BatteryCohortResult, cohort int) []CohortTrendPoint {
+	var out []CohortTrendPoint
+	for _, tr := range res.Trends {
+		if tr.Cohort == cohort && tr.Metric == "pct" && tr.Axis == "km" {
+			out = append(out, tr)
+		}
+	}
+	return out
+}
+
+func TestTrendBinsWithFewCarsAreNotReliable(t *testing.T) {
+	var pts []BatteryHealthPoint
+	for id := int64(1); id <= 6; id++ {
+		pts = append(pts, car(id, "m", 80, 500, 0.8, 20)...)
+	}
+	// Only 3 cars reach 25,000 km and more.
+	for id := int64(7); id <= 9; id++ {
+		pts = append(pts, car(id, "m", 80, 500, 0.8, 40)...)
+	}
+	res := AnalyzeBatteryCohorts(pts)
+	seen := 0
+	for _, tr := range pctKmTrend(res, res.Cohorts[0].ID) {
+		switch {
+		case tr.X == 7500:
+			seen++
+			if tr.Vehicles != 9 || !tr.Reliable {
+				t.Errorf("bin 7500 = %+v", tr)
+			}
+		case tr.X >= 27500:
+			seen++
+			if tr.Vehicles != 3 || tr.Reliable {
+				t.Errorf("tail bin = %+v", tr)
+			}
+		}
+	}
+	if seen < 3 {
+		t.Errorf("bins checked = %d", seen)
+	}
+}
+
+func TestPctTrendLeavesOutBaselineWindow(t *testing.T) {
+	var pts []BatteryHealthPoint
+	for id := int64(1); id <= 5; id++ {
+		pts = append(pts, car(id, "m", 80, 500, 2, 15)...)
+	}
+	res := AnalyzeBatteryCohorts(pts)
+	tr := pctKmTrend(res, res.Cohorts[0].ID)
+	if len(tr) == 0 || tr[0].X != 0 || tr[0].Value != 100 || tr[0].Vehicles != 5 || !tr[0].Reliable {
+		t.Fatalf("anchor = %+v", tr)
+	}
+	for _, b := range tr[1:] {
+		// The first 5 points (0..4000 km) form the baseline: bin 0-5000 km
+		// is empty and every later bin is below 100 %.
+		if b.X == 2500 {
+			t.Errorf("baseline bin in trend: %+v", b)
+		}
+		if b.Value >= 100 {
+			t.Errorf("bin %v = %.2f, want < 100", b.X, b.Value)
+		}
+	}
+	for _, b := range res.Trends {
+		if b.Metric == "pct" && b.Axis == "time" && b.X > 0 && b.X != 3 && b.X != 9 {
+			t.Errorf("time bin centre %v, want 6-month bins", b.X)
+		}
+	}
+}
+
+func TestCohortSlopePerCar(t *testing.T) {
+	var pts []BatteryHealthPoint
+	// 0.8 kWh per 10,000 km on an ~80 kWh pack: ≈ -1 % per 10,000 km.
+	// 40 points over 39,000 km and 390 days.
+	for id := int64(1); id <= 3; id++ {
+		pts = append(pts, car(id, "m", 80, 500, 0.8, 40)...)
+	}
+	// Too short (14,000 km): not in the slope.
+	pts = append(pts, car(4, "m", 80, 500, 8, 15)...)
+	res := AnalyzeBatteryCohorts(pts)
+	c := res.Cohorts[0]
+	if c.SlopePer10kKm == nil || c.SlopeKmCars != 3 {
+		t.Fatalf("cohort = %+v", c)
+	}
+	approx(t, "per 10k km", *c.SlopePer10kKm, -0.8/79.84*100, 0.01)
+	// 100 km per day: 36,525 km per year.
+	if c.SlopePerYear == nil || c.SlopeYearCars != 3 {
+		t.Fatalf("per year missing: %+v", c)
+	}
+	approx(t, "per year", *c.SlopePerYear, -0.8/79.84*100*3.6525, 0.02)
+
+	short := AnalyzeBatteryCohorts(car(5, "m", 80, 500, 0.8, 15))
+	if short.Cohorts[0].SlopePer10kKm != nil {
+		t.Error("slope from a short car")
+	}
+}
